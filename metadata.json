@@ -1,0 +1,6 @@
+{
+  "name": "DMC JUI Punjab",
+  "description": "Official campaign profile picture studio, live supporter counter, public DMC Gallery, and secure admin portal for DMC JUI Punjab.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

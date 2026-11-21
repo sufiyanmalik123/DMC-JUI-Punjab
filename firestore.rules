@@ -1,0 +1,220 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Shared primitive helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn()
+        && request.auth.token.email == 'graphicsmalik123@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn()
+        && request.auth.token.email_verified == true
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Validation blueprint: CampaignStats
+    function isValidStats(data) {
+      return data.keys().hasAll(['count', 'updatedAt'])
+        && data.keys().hasOnly(['count', 'updatedAt'])
+        && data.count is int
+        && data.count >= 0
+        && data.count <= 100000000
+        && data.updatedAt == request.time;
+    }
+
+    // Validation blueprint: CampaignConfig
+    function isValidCampaignConfig(data) {
+      return data.keys().hasAll([
+          'frameUrl',
+          'brandTitle',
+          'campaignTitle',
+          'campaignSubtitle',
+          'editorPrompt',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.keys().hasOnly([
+          'frameUrl',
+          'brandTitle',
+          'campaignTitle',
+          'campaignSubtitle',
+          'editorPrompt',
+          'updatedAt',
+          'updatedBy'
+        ])
+        && data.frameUrl is string
+        && data.frameUrl.size() >= 1
+        && data.frameUrl.size() <= 300
+        && data.frameUrl.matches('^(/assets/aistudio/|/uploads/frames/)[a-zA-Z0-9_\\-]+\\.png$')
+        && data.brandTitle is string
+        && data.brandTitle.size() >= 1
+        && data.brandTitle.size() <= 80
+        && data.campaignTitle is string
+        && data.campaignTitle.size() >= 1
+        && data.campaignTitle.size() <= 120
+        && data.campaignSubtitle is string
+        && data.campaignSubtitle.size() <= 200
+        && data.editorPrompt is string
+        && data.editorPrompt.size() <= 240
+        && data.updatedAt == request.time
+        && data.updatedBy is string
+        && data.updatedBy.size() >= 1
+        && data.updatedBy.size() <= 128
+        && data.updatedBy == request.auth.uid;
+    }
+
+    // Validation blueprint: GalleryItem
+    function isValidGalleryItem(data) {
+      return data.keys().hasAll([
+          'imageUrl',
+          'supporterName',
+          'city',
+          'mimeType',
+          'fileSize',
+          'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'imageUrl',
+          'supporterName',
+          'city',
+          'mimeType',
+          'fileSize',
+          'createdAt'
+        ])
+        && data.imageUrl is string
+        && data.imageUrl.size() >= 1
+        && data.imageUrl.size() <= 300
+        && data.imageUrl.matches('^/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)$')
+        && data.supporterName is string
+        && data.supporterName.size() <= 60
+        && data.city is string
+        && data.city.size() <= 60
+        && data.mimeType is string
+        && data.mimeType.size() <= 32
+        && data.mimeType in ['image/png', 'image/jpeg']
+        && data.fileSize is int
+        && data.fileSize > 0
+        && data.fileSize <= 10485760
+        && data.createdAt is timestamp;
+    }
+
+    // Validation blueprint: AdminUser
+    function isValidAdminDoc(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['email', 'role', 'createdAt', 'updatedAt'])
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 120
+        && data.role is string
+        && data.role.size() <= 16
+        && data.role == 'admin'
+        && data.createdAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    // Permanent SUPPORTERS counter
+    match /stats/{statId} {
+      allow get: if isValidId(statId) && statId == 'supporters';
+      allow list: if false;
+      allow create: if isValidId(statId)
+        && statId == 'supporters'
+        && isValidStats(incoming())
+        && (incoming().count == 0 || incoming().count == 1 || isAdmin());
+      allow update: if isValidId(statId)
+        && statId == 'supporters'
+        && isValidStats(incoming())
+        && (
+          isAdmin()
+          || (
+            incoming().diff(existing()).affectedKeys().hasOnly(['count', 'updatedAt'])
+            && existing().count is int
+            && incoming().count == existing().count + 1
+          )
+        );
+      allow delete: if false;
+    }
+
+    // Active campaign frame and branding configuration
+    match /campaign_config/{configId} {
+      allow get: if isValidId(configId) && configId == 'active';
+      allow list: if false;
+      allow create: if isAdmin()
+        && isValidId(configId)
+        && configId == 'active'
+        && isValidCampaignConfig(incoming());
+      allow update: if isAdmin()
+        && isValidId(configId)
+        && configId == 'active'
+        && isValidCampaignConfig(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'frameUrl',
+          'brandTitle',
+          'campaignTitle',
+          'campaignSubtitle',
+          'editorPrompt',
+          'updatedAt',
+          'updatedBy'
+        ]);
+      allow delete: if false;
+    }
+
+    // Public DMC Gallery items
+    match /gallery_items/{itemId} {
+      allow get: if isValidId(itemId);
+      allow list: if resource.data.imageUrl is string && resource.data.createdAt is timestamp;
+      allow create: if isValidId(itemId)
+        && isValidGalleryItem(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if isAdmin()
+        && isValidId(itemId)
+        && isValidGalleryItem(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['supporterName', 'city']);
+      allow delete: if isAdmin() && isValidId(itemId);
+    }
+
+    // Admin role documents
+    match /admins/{adminId} {
+      allow get: if isSignedIn()
+        && isValidId(adminId)
+        && (request.auth.uid == adminId || isBootstrappedAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isBootstrappedAdmin()
+        && isValidId(adminId)
+        && isValidAdminDoc(incoming())
+        && incoming().createdAt == request.time;
+      allow update: if isBootstrappedAdmin()
+        && isValidId(adminId)
+        && isValidAdminDoc(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'role', 'updatedAt']);
+      allow delete: if isBootstrappedAdmin() && isValidId(adminId);
+    }
+  }
+}

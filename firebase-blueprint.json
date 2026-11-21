@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "CampaignStats": {
+      "title": "CampaignStats",
+      "description": "Tracks the permanent SUPPORTERS counter incremented by 1 per successful profile download.",
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "description": "Total number of successful campaign profile picture downloads, starting at 0."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest counter update."
+        }
+      },
+      "required": ["count", "updatedAt"]
+    },
+    "CampaignConfig": {
+      "title": "CampaignConfig",
+      "description": "Stores the active campaign PNG frame and branding/copy settings managed by the administrator.",
+      "type": "object",
+      "properties": {
+        "frameUrl": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^(/assets/aistudio/|/uploads/frames/)[a-zA-Z0-9_\\-]+\\.png$",
+          "description": "Relative URL to the active transparent PNG campaign frame."
+        },
+        "brandTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Header brand title displayed at the top-left."
+        },
+        "campaignTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Primary campaign headline displayed on the editor page."
+        },
+        "campaignSubtitle": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Event location, date, or campaign tagline."
+        },
+        "editorPrompt": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Instructional subtext guiding visitors in the profile editor."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest configuration change."
+        },
+        "updatedBy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "UID of the admin who updated the campaign configuration."
+        }
+      },
+      "required": [
+        "frameUrl",
+        "brandTitle",
+        "campaignTitle",
+        "campaignSubtitle",
+        "editorPrompt",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "GalleryItem": {
+      "title": "GalleryItem",
+      "description": "A public campaign profile picture uploaded by a visitor to the DMC Gallery.",
+      "type": "object",
+      "properties": {
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 300,
+          "pattern": "^/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)$",
+          "description": "Validated relative URL path to the composed campaign image."
+        },
+        "supporterName": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Optional display name provided by the supporter."
+        },
+        "city": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "Optional city or district provided by the supporter."
+        },
+        "mimeType": {
+          "type": "string",
+          "enum": ["image/png", "image/jpeg"],
+          "description": "Validated image MIME type."
+        },
+        "fileSize": {
+          "type": "integer",
+          "description": "Validated byte size of the uploaded image (max 10MB)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the image was uploaded."
+        }
+      },
+      "required": ["imageUrl", "supporterName", "city", "mimeType", "fileSize", "createdAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator role document verified by Firestore security rules.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 120,
+          "description": "Verified administrator email address."
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "Assigned role."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["email", "role", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/stats/{statId}": {
+      "schema": { "$ref": "#/entities/CampaignStats" },
+      "description": "Publicly readable and atomically incrementable SUPPORTERS counter document (stats/supporters)."
+    },
+    "/campaign_config/{configId}": {
+      "schema": { "$ref": "#/entities/CampaignConfig" },
+      "description": "Publicly readable, admin-writable active campaign configuration and frame settings (campaign_config/active)."
+    },
+    "/gallery_items/{itemId}": {
+      "schema": { "$ref": "#/entities/GalleryItem" },
+      "description": "Publicly readable and creatable DMC Gallery items; only admins may update or delete."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Authorized administrator registry managed by the bootstrapped admin."
+    }
+  }
+}
