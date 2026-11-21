@@ -5,11 +5,8 @@ import {
   Eye,
   ImagePlus,
   Maximize2,
-  RotateCw,
   UploadCloud,
   X,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import {
   incrementSupportersCounter,
@@ -92,7 +89,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
   const [cutout, setCutout] = useState<CutoutBounds>({ cx: 0.5, cy: 0.35, width: 0.48, height: 0.58 });
 
   const [userImage, setUserImage] = useState<HTMLImageElement | null>(null);
-  const [userPhotoName, setUserPhotoName] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Photo transform state in normalized canvas space (1000x1000 reference)
@@ -177,7 +173,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
         setUserImage(img);
-        setUserPhotoName(file.name);
         fitPhotoToFrame(img, cutout);
       };
       img.onerror = () => {
@@ -447,73 +442,100 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
         <p className="text-sm text-[#5C6660] max-w-sm leading-relaxed">{config.editorPrompt}</p>
       </div>
 
-      {/* Main 2-Column Editor Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Interactive Canvas Stage & Primary Action Buttons */}
-        <div className="lg:col-span-7 flex flex-col gap-5">
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOver(true);
-            }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setIsDragOver(false);
-              const file = e.dataTransfer.files?.[0];
-              if (file) loadSelectedFile(file);
-            }}
-            className={`relative bg-white border rounded-2xl p-3 sm:p-4 transition-colors ${
-              isDragOver ? 'border-[#064E3B] ring-2 ring-[#064E3B]/20' : 'border-[#E4E7E2]'
-            }`}
-          >
-            <div className="relative aspect-square w-full max-w-[560px] mx-auto rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2]">
-              <canvas
-                ref={canvasRef}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUpOrCancel}
-                onPointerCancel={handlePointerUpOrCancel}
-                className={`w-full h-full block touch-none select-none ${
-                  userImage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                }`}
-                onClick={() => {
-                  if (!userImage) fileInputRef.current?.click();
-                }}
-              />
+      {/* Centered Editor Workspace */}
+      <div className="max-w-2xl mx-auto flex flex-col gap-5">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) loadSelectedFile(file);
+            e.target.value = '';
+          }}
+        />
 
-              {/* Empty state overlay prompt inside photo window */}
-              {!userImage && !frameError && (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragOver(true);
+          }}
+          onDragLeave={() => setIsDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragOver(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) loadSelectedFile(file);
+          }}
+          className={`relative bg-white border rounded-2xl p-3 sm:p-4 transition-colors ${
+            isDragOver ? 'border-[#064E3B] ring-2 ring-[#064E3B]/20' : 'border-[#E4E7E2]'
+          }`}
+        >
+          <div className="relative aspect-square w-full max-w-[560px] mx-auto rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2]">
+            <canvas
+              ref={canvasRef}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUpOrCancel}
+              onPointerCancel={handlePointerUpOrCancel}
+              className={`w-full h-full block touch-none select-none ${
+                userImage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
+              }`}
+              onClick={() => {
+                if (!userImage) fileInputRef.current?.click();
+              }}
+            />
+
+            {/* Empty state overlay prompt inside photo window */}
+            {!userImage && !frameError && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="absolute inset-0 flex flex-col items-center justify-center bg-[#141D18]/10 hover:bg-[#141D18]/15 transition-colors text-center p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#064E3B]"
+              >
+                <span className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#064E3B] text-white text-sm font-semibold shadow-sm">
+                  <ImagePlus className="w-4 h-4" />
+                  Import Your Photo
+                </span>
+                <span className="mt-2.5 text-xs font-medium text-[#141D18] bg-white/95 px-3 py-1 rounded-md border border-[#E4E7E2]">
+                  Click to select or drag &amp; drop PNG / JPG
+                </span>
+              </button>
+            )}
+
+            {frameError && (
+              <div className="absolute inset-0 flex items-center justify-center p-6 bg-white/95 text-center">
+                <p className="text-sm font-medium text-red-700">{frameError}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Canvas footer helper bar */}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#5C6660] px-1">
+            <span>
+              {userImage
+                ? 'Drag to move · Scroll or pinch to zoom'
+                : 'Fixed campaign frame stays locked above your portrait'}
+            </span>
+            {userImage && (
+              <div className="flex items-center gap-4">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute inset-0 flex flex-col items-center justify-center bg-[#141D18]/10 hover:bg-[#141D18]/15 transition-colors text-center p-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#064E3B]"
+                  className="inline-flex items-center gap-1.5 font-semibold text-[#064E3B] hover:underline whitespace-nowrap"
                 >
-                  <span className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#064E3B] text-white text-sm font-semibold shadow-sm">
-                    <ImagePlus className="w-4 h-4" />
-                    Import Your Photo
-                  </span>
-                  <span className="mt-2.5 text-xs font-medium text-[#141D18] bg-white/95 px-3 py-1 rounded-md border border-[#E4E7E2]">
-                    Click to select or drag &amp; drop PNG / JPG
-                  </span>
+                  <ImagePlus className="w-3.5 h-3.5" />
+                  Replace Photo
                 </button>
-              )}
-
-              {frameError && (
-                <div className="absolute inset-0 flex items-center justify-center p-6 bg-white/95 text-center">
-                  <p className="text-sm font-medium text-red-700">{frameError}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Canvas footer helper bar */}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[#5C6660] px-1">
-              <span>
-                {userImage
-                  ? 'Drag to reposition · Scroll or pinch to zoom · Frame stays fixed above photo'
-                  : 'Fixed campaign frame stays locked above your portrait'}
-              </span>
-              {userImage && (
+                <button
+                  type="button"
+                  onClick={() => fitPhotoToFrame(userImage, cutout)}
+                  className="inline-flex items-center gap-1.5 font-semibold text-[#064E3B] hover:underline whitespace-nowrap"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  Center &amp; Fit
+                </button>
                 <button
                   type="button"
                   onClick={handlePreviewModal}
@@ -522,229 +544,88 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
                   <Eye className="w-3.5 h-3.5" />
                   Preview Final
                 </button>
-              )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Two Prominent Side-by-Side Action Buttons Below Editor */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <button
+            type="button"
+            onClick={handleDownloadImage}
+            disabled={isDownloading || !userImage}
+            className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#064E3B] text-white font-display text-sm font-bold tracking-wide hover:bg-[#053D2E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#064E3B]"
+          >
+            <Download className="w-4 h-4 shrink-0" />
+            {isDownloading ? 'PREPARING PNG...' : 'DOWNLOAD IMAGE'}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleUploadToDmc}
+            disabled={isUploading || !userImage}
+            className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white border-2 border-[#064E3B] text-[#064E3B] font-display text-sm font-bold tracking-wide hover:bg-[#F2F7F4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#064E3B]"
+          >
+            <UploadCloud className="w-4 h-4 shrink-0" />
+            {isUploading ? `UPLOADING ${uploadProgress}%` : 'UPLOAD TO DMC'}
+          </button>
+        </div>
+
+        {/* Upload Progress Bar */}
+        {isUploading && (
+          <div className="bg-white border border-[#E4E7E2] rounded-xl p-4" role="status">
+            <div className="flex items-center justify-between text-xs font-semibold text-[#141D18] mb-2">
+              <span>Uploading composed portrait to DMC Gallery</span>
+              <span className="font-mono-tabular">{uploadProgress}%</span>
+            </div>
+            <div className="w-full h-2 bg-[#E4E7E2] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#064E3B] transition-all duration-150"
+                style={{ width: `${uploadProgress}%` }}
+              />
             </div>
           </div>
+        )}
 
-          {/* Two Prominent Side-by-Side Action Buttons Below Editor */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <button
-              type="button"
-              onClick={handleDownloadImage}
-              disabled={isDownloading || !userImage}
-              className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-[#064E3B] text-white font-display text-sm font-bold tracking-wide hover:bg-[#053D2E] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#064E3B]"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              {isDownloading ? 'PREPARING PNG...' : 'DOWNLOAD IMAGE'}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleUploadToDmc}
-              disabled={isUploading || !userImage}
-              className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white border-2 border-[#064E3B] text-[#064E3B] font-display text-sm font-bold tracking-wide hover:bg-[#F2F7F4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#064E3B]"
-            >
-              <UploadCloud className="w-4 h-4 shrink-0" />
-              {isUploading ? `UPLOADING ${uploadProgress}%` : 'UPLOAD TO DMC'}
-            </button>
+        {/* Feedback Banners */}
+        {actionError && (
+          <div
+            role="alert"
+            className="bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-3 text-sm font-medium"
+          >
+            {actionError}
           </div>
+        )}
 
-          {/* Upload Progress Bar */}
-          {isUploading && (
-            <div className="bg-white border border-[#E4E7E2] rounded-xl p-4" role="status">
-              <div className="flex items-center justify-between text-xs font-semibold text-[#141D18] mb-2">
-                <span>Uploading composed portrait to DMC Gallery</span>
-                <span className="font-mono-tabular">{uploadProgress}%</span>
-              </div>
-              <div className="w-full h-2 bg-[#E4E7E2] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-[#064E3B] transition-all duration-150"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-            </div>
-          )}
+        {downloadSuccess && (
+          <div
+            role="status"
+            className="bg-[#ECFDF5] border border-[#A7F3D0] text-[#064E3B] rounded-xl px-4 py-3 text-sm font-medium flex items-start gap-2.5"
+          >
+            <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>{downloadSuccess}</span>
+          </div>
+        )}
 
-          {/* Feedback Banners */}
-          {actionError && (
-            <div
-              role="alert"
-              className="bg-red-50 border border-red-200 text-red-800 rounded-xl px-4 py-3 text-sm font-medium"
-            >
-              {actionError}
-            </div>
-          )}
-
-          {downloadSuccess && (
-            <div
-              role="status"
-              className="bg-[#ECFDF5] border border-[#A7F3D0] text-[#064E3B] rounded-xl px-4 py-3 text-sm font-medium flex items-start gap-2.5"
-            >
+        {uploadSuccess && (
+          <div
+            role="status"
+            className="bg-[#ECFDF5] border border-[#A7F3D0] text-[#064E3B] rounded-xl px-4 py-3 text-sm font-medium flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+          >
+            <div className="flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{downloadSuccess}</span>
+              <span>{uploadSuccess}</span>
             </div>
-          )}
-
-          {uploadSuccess && (
-            <div
-              role="status"
-              className="bg-[#ECFDF5] border border-[#A7F3D0] text-[#064E3B] rounded-xl px-4 py-3 text-sm font-medium flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-            >
-              <div className="flex items-start gap-2.5">
-                <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-                <span>{uploadSuccess}</span>
-              </div>
-              <button
-                type="button"
-                onClick={onOpenGallery}
-                className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg bg-[#064E3B] text-white text-xs font-semibold hover:bg-[#053D2E] whitespace-nowrap shrink-0"
-              >
-                View DMC Gallery
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Right Column: Precision Photo & Gallery Controls */}
-        <div className="lg:col-span-5 bg-white border border-[#E4E7E2] rounded-2xl p-5 sm:p-6 flex flex-col gap-6">
-          {/* 1. Photo Import */}
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <h2 className="font-display text-base font-bold text-[#141D18]">
-                1. Import Your Photo
-              </h2>
-              {userPhotoName && (
-                <span className="text-xs text-[#5C6660] truncate max-w-[180px]">
-                  {userPhotoName}
-                </span>
-              )}
-            </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) loadSelectedFile(file);
-                e.target.value = '';
-              }}
-            />
-
             <button
               type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-3 px-4 rounded-xl border border-dashed border-[#064E3B]/45 bg-[#F8FAF8] hover:bg-[#EFF5F1] text-[#064E3B] text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors"
+              onClick={onOpenGallery}
+              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg bg-[#064E3B] text-white text-xs font-semibold hover:bg-[#053D2E] whitespace-nowrap shrink-0"
             >
-              <ImagePlus className="w-4 h-4" />
-              {userImage ? 'Replace Photo from Device' : 'Choose Photo from Device'}
+              View DMC Gallery
             </button>
           </div>
-
-          <hr className="border-[#E4E7E2]" />
-
-          {/* 2. Framing & Zoom Controls */}
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-display text-base font-bold text-[#141D18]">
-                2. Adjust Position &amp; Zoom
-              </h2>
-              {userImage && (
-                <button
-                  type="button"
-                  onClick={() => fitPhotoToFrame(userImage, cutout)}
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#064E3B] hover:underline whitespace-nowrap"
-                >
-                  <Maximize2 className="w-3.5 h-3.5" />
-                  Center &amp; Fit
-                </button>
-              )}
-            </div>
-
-            {/* Zoom slider + buttons */}
-            <div>
-              <div className="flex items-center justify-between text-xs text-[#5C6660] mb-1.5">
-                <label htmlFor="zoom-range" className="font-medium text-[#141D18]">
-                  Zoom
-                </label>
-                <span className="font-mono-tabular">{Math.round(zoom * 100)}%</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  disabled={!userImage}
-                  onClick={() =>
-                    setZoom((prev) => Number(Math.max(0.2, prev - 0.1).toFixed(2)))
-                  }
-                  aria-label="Zoom out"
-                  className="w-10 h-10 inline-flex items-center justify-center rounded-lg border border-[#E4E7E2] text-[#141D18] hover:bg-[#F4F5F3] disabled:opacity-40"
-                >
-                  <ZoomOut className="w-4 h-4" />
-                </button>
-                <input
-                  id="zoom-range"
-                  type="range"
-                  min={0.2}
-                  max={4.5}
-                  step={0.02}
-                  disabled={!userImage}
-                  value={zoom}
-                  onChange={(e) => setZoom(Number(e.target.value))}
-                  className="flex-1 accent-[#064E3B] cursor-pointer disabled:opacity-40"
-                />
-                <button
-                  type="button"
-                  disabled={!userImage}
-                  onClick={() =>
-                    setZoom((prev) => Number(Math.min(4.5, prev + 0.1).toFixed(2)))
-                  }
-                  aria-label="Zoom in"
-                  className="w-10 h-10 inline-flex items-center justify-center rounded-lg border border-[#E4E7E2] text-[#141D18] hover:bg-[#F4F5F3] disabled:opacity-40"
-                >
-                  <ZoomIn className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Rotation controls */}
-            <div>
-              <div className="flex items-center justify-between text-xs text-[#5C6660] mb-1.5">
-                <label htmlFor="rotation-range" className="font-medium text-[#141D18]">
-                  Rotation
-                </label>
-                <span className="font-mono-tabular">{rotation}°</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <input
-                  id="rotation-range"
-                  type="range"
-                  min={-180}
-                  max={180}
-                  step={1}
-                  disabled={!userImage}
-                  value={rotation}
-                  onChange={(e) => setRotation(Number(e.target.value))}
-                  className="flex-1 accent-[#064E3B] cursor-pointer disabled:opacity-40"
-                />
-                <button
-                  type="button"
-                  disabled={!userImage}
-                  onClick={() =>
-                    setRotation((prev) => {
-                      const next = prev + 90;
-                      return next > 180 ? next - 360 : next;
-                    })
-                  }
-                  className="h-10 px-3 inline-flex items-center gap-1.5 rounded-lg border border-[#E4E7E2] text-xs font-semibold text-[#141D18] hover:bg-[#F4F5F3] disabled:opacity-40 whitespace-nowrap"
-                >
-                  <RotateCw className="w-3.5 h-3.5" />
-                  +90°
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Full-Resolution Composition Preview Modal */}
