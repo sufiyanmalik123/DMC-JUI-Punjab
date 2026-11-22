@@ -26,6 +26,7 @@ import {
   FrameAsset,
   GalleryItem,
 } from '../types/campaign';
+import { GalleryPortraitImage } from './GalleryPortraitImage';
 
 interface AdminDashboardProps {
   config: CampaignConfig;
@@ -110,12 +111,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
     };
 
-    const unsub = subscribeLatestGalleryItems(20, (items, cursor) => {
-      setGalleryItems(items);
-      setLastCursor(cursor);
-      setHasMore(items.length === 20);
-      void refreshCount();
-    });
+    const unsub = subscribeLatestGalleryItems(
+      20,
+      (items, cursor) => {
+        setGalleryItems(items);
+        setLastCursor(cursor);
+        setHasMore(items.length === 20);
+        void refreshCount();
+      },
+      (err) => {
+        setAdminError(err.message);
+      },
+    );
 
     return () => unsub();
   }, [isAuthorizedAdmin, loadFramesList]);
@@ -216,10 +223,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleLoadMoreGallery = async () => {
     if (!lastCursor) return;
-    const next = await fetchNextGalleryPage(20, lastCursor);
-    setExtraItems((prev) => [...prev, ...next.items]);
-    setLastCursor(next.lastDoc);
-    setHasMore(next.hasMore);
+    try {
+      const next = await fetchNextGalleryPage(20, lastCursor);
+      setExtraItems((prev) => [...prev, ...next.items]);
+      setLastCursor(next.lastDoc);
+      setHasMore(next.hasMore);
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : 'Unable to load more gallery uploads.');
+    }
   };
 
   if (!authReady) {
@@ -588,12 +599,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   >
                     <div>
                       <div className="aspect-square rounded-lg overflow-hidden bg-white border border-[#E4E7E2]">
-                        <img
-                          src={item.imageUrl}
+                        <GalleryPortraitImage
+                          item={item}
                           alt={item.supporterName || 'Gallery upload'}
-                          referrerPolicy="no-referrer"
-                          loading="lazy"
-                          className="w-full h-full object-cover"
                         />
                       </div>
                       <p className="mt-2 text-xs font-semibold text-[#141D18] truncate">

@@ -17,6 +17,7 @@ import { CampaignConfig } from '../types/campaign';
 interface ProfileEditorProps {
   config: CampaignConfig;
   onOpenGallery: () => void;
+  onSupportersUpdated?: (count: number) => void;
 }
 
 interface CutoutBounds {
@@ -28,7 +29,8 @@ interface CutoutBounds {
 
 const PREVIEW_CANVAS_SIZE = 1000;
 const DOWNLOAD_EXPORT_SIZE = 2000;
-const GALLERY_EXPORT_SIZE = 1500;
+const GALLERY_EXPORT_SIZE = 1000;
+const MAX_FIRESTORE_BINARY_BYTES = 2_400_000;
 
 function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
   const sampleSize = 120;
@@ -80,9 +82,14 @@ function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
   };
 }
 
-export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGallery }) => {
+export const ProfileEditor: React.FC<ProfileEditorProps> = ({
+  config,
+  onOpenGallery,
+  onSupportersUpdated,
+}) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const downloadInFlightRef = useRef(false);
 
   const [frameImage, setFrameImage] = useState<HTMLImageElement | null>(null);
   const [frameError, setFrameError] = useState<string | null>(null);
@@ -344,6 +351,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
   };
 
   const handleDownloadImage = async () => {
+    if (downloadInFlightRef.current) return;
     if (!userImage) {
       setActionError('Please import your photo before downloading.');
       return;
@@ -353,12 +361,17 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
       return;
     }
 
+    downloadInFlightRef.current = true;
     setActionError(null);
     setDownloadSuccess(null);
     setIsDownloading(true);
 
     try {
       const blob = await exportCompositionBlob(DOWNLOAD_EXPORT_SIZE, 'image/png');
+      if (!blob || blob.size === 0) {
+        throw new Error('Image export produced an empty file.');
+      }
+
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
@@ -366,9 +379,10 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setTimeout(() => URL.revokeObjectURL(url), 15000);
 
-      await incrementSupportersCounter();
+      const nextCount = await incrementSupportersCounter();
+      onSupportersUpdated?.(nextCount);
       setDownloadSuccess(
         'Your high-resolution PNG profile picture is ready, and the SUPPORTERS counter has been updated.',
       );
@@ -377,6 +391,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
         err instanceof Error ? err.message : 'Unable to complete download. Please try again.',
       );
     } finally {
+      downloadInFlightRef.current = false;
       setIsDownloading(false);
     }
   };
@@ -397,10 +412,14 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
     setUploadProgress(5);
 
     try {
+      let mimeType: 'image/png' | 'image/jpeg' = 'image/png';
       let blob = await exportCompositionBlob(GALLERY_EXPORT_SIZE, 'image/png');
-      // Keep gallery uploads comfortably under the 8MB server limit
-      if (blob.size > 7.5 * 1024 * 1024) {
-        blob = await exportCompositionBlob(1100, 'image/png');
+      if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
+        blob = await exportCompositionBlob(820, 'image/png');
+      }
+      if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
+        mimeType = 'image/jpeg';
+        blob = await exportCompositionBlob(1200, 'image/jpeg');
       }
 
       await uploadToGalleryWithProgress(
@@ -408,7 +427,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
         {
           supporterName: '',
           city: '',
-          mimeType: 'image/png',
+          mimeType,
         },
         (pct) => setUploadProgress(pct),
       );
@@ -426,7 +445,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Campaign Header Banner */}
-      <div className="mb-8 pb-6 border-b border-[#E4E7E2] flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+      <div className="mb-8 pb-6 border-b border-[#E4E7E2]">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold tracking-[0.1em] text-[#B08D57] uppercase">
             Official Profile Campaign Studio
@@ -439,7 +458,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({ config, onOpenGall
           </h1>
           <p className="mt-2 text-sm sm:text-base text-[#5C6660]">{config.campaignSubtitle}</p>
         </div>
-        <p className="text-sm text-[#5C6660] max-w-sm leading-relaxed">{config.editorPrompt}</p>
       </div>
 
       {/* Centered Editor Workspace */}

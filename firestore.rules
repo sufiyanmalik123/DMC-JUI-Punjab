@@ -105,12 +105,13 @@ service cloud.firestore {
           'city',
           'mimeType',
           'fileSize',
+          'chunkCount',
           'createdAt'
         ])
         && data.imageUrl is string
         && data.imageUrl.size() >= 1
         && data.imageUrl.size() <= 300
-        && data.imageUrl.matches('^/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)$')
+        && data.imageUrl.matches('^(/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)|firestore://[a-zA-Z0-9_\\-]+)$')
         && data.supporterName is string
         && data.supporterName.size() <= 60
         && data.city is string
@@ -121,7 +122,21 @@ service cloud.firestore {
         && data.fileSize is int
         && data.fileSize > 0
         && data.fileSize <= 10485760
+        && (!('chunkCount' in data) || (data.chunkCount is int && data.chunkCount >= 0 && data.chunkCount <= 12))
         && data.createdAt is timestamp;
+    }
+
+    // Validation blueprint: ImageChunk
+    function isValidImageChunk(data) {
+      return data.keys().hasAll(['index', 'data'])
+        && data.keys().hasOnly(['index', 'data'])
+        && data.index is int
+        && data.index >= 0
+        && data.index < 12
+        && data.data is string
+        && data.data.size() >= 1
+        && data.data.size() <= 600000
+        && data.data.matches('^[A-Za-z0-9+/=]+$');
     }
 
     // Validation blueprint: AdminUser
@@ -187,7 +202,7 @@ service cloud.firestore {
     // Public DMC Gallery items
     match /gallery_items/{itemId} {
       allow get: if isValidId(itemId);
-      allow list: if resource.data.imageUrl is string && resource.data.createdAt is timestamp;
+      allow list: if resource.data.createdAt >= timestamp.date(2020, 1, 1);
       allow create: if isValidId(itemId)
         && isValidGalleryItem(incoming())
         && incoming().createdAt == request.time;
@@ -197,6 +212,20 @@ service cloud.firestore {
         && incoming().createdAt == existing().createdAt
         && incoming().diff(existing()).affectedKeys().hasOnly(['supporterName', 'city']);
       allow delete: if isAdmin() && isValidId(itemId);
+
+      // Persistent chunked image bytes bound atomically to the parent gallery item
+      match /chunks/{chunkId} {
+        allow get: if isValidId(itemId)
+          && isValidId(chunkId)
+          && exists(/databases/$(database)/documents/gallery_items/$(itemId));
+        allow list: if false;
+        allow create: if isValidId(itemId)
+          && isValidId(chunkId)
+          && isValidImageChunk(incoming())
+          && existsAfter(/databases/$(database)/documents/gallery_items/$(itemId));
+        allow update: if false;
+        allow delete: if isAdmin() && isValidId(itemId) && isValidId(chunkId);
+      }
     }
 
     // Admin role documents

@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, ImageOff, Maximize2, Search, X } from 'lucide-react';
+import { Download, Maximize2, X } from 'lucide-react';
 import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import {
   fetchGalleryTotalCount,
   fetchNextGalleryPage,
+  resolveGalleryItemImageUrl,
   subscribeLatestGalleryItems,
 } from '../services/campaignService';
 import { GalleryItem } from '../types/campaign';
+import { GalleryPortraitImage } from './GalleryPortraitImage';
 
 interface DmcGalleryProps {
   onCreateOwn: () => void;
@@ -23,6 +25,20 @@ function formatUploadDate(date: Date | null): string {
   });
 }
 
+function extractReadableError(err: Error): string {
+  try {
+    const parsed = JSON.parse(err.message);
+    if (parsed && typeof parsed.error === 'string') {
+      return `Unable to load the DMC Gallery: ${parsed.error}`;
+    }
+  } catch {
+    if (err.message) {
+      return `Unable to load the DMC Gallery: ${err.message}`;
+    }
+  }
+  return 'Unable to load the DMC Gallery right now.';
+}
+
 export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
   const [liveItems, setLiveItems] = useState<GalleryItem[]>([]);
   const [extraItems, setExtraItems] = useState<GalleryItem[]>([]);
@@ -33,8 +49,6 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const [lightboxItem, setLightboxItem] = useState<GalleryItem | null>(null);
 
   useEffect(() => {
@@ -56,11 +70,12 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
         setLiveItems(items);
         setLastCursor(cursor);
         setHasMore(items.length === PAGE_SIZE);
+        setError(null);
         setLoading(false);
         void refreshCount();
       },
-      () => {
-        setError('Unable to load the DMC Gallery right now.');
+      (err) => {
+        setError(extractReadableError(err));
         setLoading(false);
       },
     );
@@ -81,16 +96,6 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
     return merged;
   }, [extraItems, liveItems]);
 
-  const filteredItems = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return allItems;
-    return allItems.filter(
-      (item) =>
-        item.supporterName.toLowerCase().includes(q) ||
-        item.city.toLowerCase().includes(q),
-    );
-  }, [allItems, searchQuery]);
-
   const handleLoadMore = async () => {
     if (!lastCursor || loadingMore) return;
     setLoadingMore(true);
@@ -99,8 +104,12 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
       setExtraItems((prev) => [...prev, ...next.items]);
       setLastCursor(next.lastDoc);
       setHasMore(next.hasMore);
-    } catch {
-      setError('Could not load additional gallery pictures.');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? extractReadableError(err)
+          : 'Could not load additional gallery pictures.',
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -115,7 +124,8 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
     const filename = `${safeBase || 'dmc-supporter'}-${item.id.slice(0, 6)}.${ext}`;
 
     try {
-      const response = await fetch(item.imageUrl);
+      const resolvedUrl = await resolveGalleryItemImageUrl(item);
+      const response = await fetch(resolvedUrl);
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -124,59 +134,29 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch {
-      const anchor = document.createElement('a');
-      anchor.href = item.imageUrl;
-      anchor.download = filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
+      setError('Unable to download this image right now.');
     }
   };
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
       {/* Gallery Header */}
-      <div className="pb-6 mb-8 border-b border-[#E4E7E2] flex flex-col md:flex-row md:items-end md:justify-between gap-5">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.1em] text-[#B08D57] uppercase">
-            Public Supporter Showcase
-          </p>
-          <h1 className="mt-1.5 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141D18]">
-            DMC GALLERY
-          </h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#5C6660]">
-            <span>
-              Total Uploaded Pictures:{' '}
-              <strong className="font-mono-tabular text-[#064E3B]">
-                {Math.max(totalCount, allItems.length).toLocaleString()}
-              </strong>
-            </span>
-            <span aria-hidden="true">·</span>
-            <span>Open to everyone · Latest uploads first</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-          <div className="relative">
-            <Search className="w-4 h-4 text-[#5C6660] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter by name or city"
-              aria-label="Filter gallery by supporter name or city"
-              className="w-full sm:w-56 pl-9 pr-3 py-2 text-sm rounded-lg border border-[#E4E7E2] bg-white text-[#141D18] focus:outline-none focus:border-[#064E3B]"
-            />
-          </div>
-          <button
-            type="button"
-            onClick={onCreateOwn}
-            className="px-4 py-2 rounded-lg bg-[#064E3B] text-white text-sm font-semibold hover:bg-[#053D2E] transition-colors whitespace-nowrap"
-          >
-            Create Your Profile
-          </button>
+      <div className="pb-6 mb-8 border-b border-[#E4E7E2]">
+        <p className="text-xs font-semibold tracking-[0.1em] text-[#B08D57] uppercase">
+          Public Supporter Showcase
+        </p>
+        <h1 className="mt-1.5 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#141D18]">
+          DMC GALLERY
+        </h1>
+        <div className="mt-2 text-sm text-[#5C6660]">
+          <span>
+            Total Uploaded Pictures:{' '}
+            <strong className="font-mono-tabular text-[#064E3B]">
+              {Math.max(totalCount, allItems.length).toLocaleString()}
+            </strong>
+          </span>
         </div>
       </div>
 
@@ -199,106 +179,83 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
             </div>
           ))}
         </div>
-      ) : filteredItems.length === 0 ? (
+      ) : error ? null : allItems.length === 0 ? (
         <div className="bg-white border border-[#E4E7E2] rounded-2xl p-12 text-center">
           <h2 className="font-display text-xl font-bold text-[#141D18]">
-            {searchQuery.trim()
-              ? 'No matching supporter portraits'
-              : 'No campaign pictures uploaded yet'}
+            No campaign pictures uploaded yet
           </h2>
           <p className="mt-2 text-sm text-[#5C6660] max-w-md mx-auto">
-            {searchQuery.trim()
-              ? 'Try clearing your search filter to view all uploaded campaign portraits.'
-              : 'Be the first to create your profile picture with the official DMC JUI Punjab campaign frame and publish it here.'}
+            Be the first to frame your portrait with the official DMC JUI Punjab campaign frame and
+            publish it here.
           </p>
           <button
             type="button"
-            onClick={searchQuery.trim() ? () => setSearchQuery('') : onCreateOwn}
+            onClick={onCreateOwn}
             className="mt-5 px-5 py-2.5 rounded-xl bg-[#064E3B] text-white text-sm font-semibold hover:bg-[#053D2E] transition-colors"
           >
-            {searchQuery.trim() ? 'Clear Filter' : 'Create & Upload Portrait'}
+            Upload Campaign Portrait
           </button>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {filteredItems.map((item) => {
-              const isBroken = Boolean(failedImages[item.id]);
-              return (
-                <article
-                  key={item.id}
-                  className="bg-white border border-[#E4E7E2] rounded-2xl p-3 flex flex-col justify-between transition-colors hover:border-[#C5CEC7]"
-                >
-                  <div>
-                    <div className="relative aspect-square rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2] group">
-                      {!isBroken ? (
-                        <>
-                          <img
-                            src={item.imageUrl}
-                            alt={
-                              item.supporterName
-                                ? `${item.supporterName} campaign profile portrait`
-                                : 'DMC JUI Punjab supporter portrait'
-                            }
-                            referrerPolicy="no-referrer"
-                            loading="lazy"
-                            onError={() =>
-                              setFailedImages((prev) => ({ ...prev, [item.id]: true }))
-                            }
-                            className="w-full h-full object-cover"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setLightboxItem(item)}
-                            aria-label="Inspect full size portrait"
-                            className="absolute top-2.5 right-2.5 w-9 h-9 rounded-lg bg-white/90 border border-[#E4E7E2] text-[#141D18] inline-flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
-                          >
-                            <Maximize2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 text-[#5C6660]">
-                          <ImageOff className="w-6 h-6 mb-2" />
-                          <span className="text-xs font-medium">
-                            {item.supporterName || 'DMC Supporter'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-3 px-1">
-                      <h3 className="font-display text-sm font-semibold text-[#141D18] truncate">
-                        {item.supporterName || 'DMC JUI Punjab Supporter'}
-                      </h3>
-                      <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[#5C6660] truncate">
-                        {item.city && (
-                          <>
-                            <span className="truncate">{item.city}</span>
-                            <span aria-hidden="true">·</span>
-                          </>
-                        )}
-                        <span className="whitespace-nowrap">
-                          {formatUploadDate(item.createdAt)}
-                        </span>
-                      </div>
-                    </div>
+            {allItems.map((item) => (
+              <article
+                key={item.id}
+                className="bg-white border border-[#E4E7E2] rounded-2xl p-3 flex flex-col justify-between transition-colors hover:border-[#C5CEC7]"
+              >
+                <div>
+                  <div className="relative aspect-square rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2] group">
+                    <GalleryPortraitImage
+                      item={item}
+                      alt={
+                        item.supporterName
+                          ? `${item.supporterName} campaign profile portrait`
+                          : 'DMC JUI Punjab supporter portrait'
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setLightboxItem(item)}
+                      aria-label="Inspect full size portrait"
+                      className="absolute top-2.5 right-2.5 w-9 h-9 rounded-lg bg-white/90 border border-[#E4E7E2] text-[#141D18] inline-flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => void handleDownloadGalleryImage(item)}
-                    className="mt-3 w-full py-2 px-3 rounded-xl bg-[#F4F7F5] hover:bg-[#064E3B] text-[#064E3B] hover:text-white border border-[#DCE5DF] text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    Download
-                  </button>
-                </article>
-              );
-            })}
+                  <div className="mt-3 px-1">
+                    <h3 className="font-display text-sm font-semibold text-[#141D18] truncate">
+                      {item.supporterName || 'DMC JUI Punjab Supporter'}
+                    </h3>
+                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[#5C6660] truncate">
+                      {item.city && (
+                        <>
+                          <span className="truncate">{item.city}</span>
+                          <span aria-hidden="true">·</span>
+                        </>
+                      )}
+                      <span className="whitespace-nowrap">
+                        {formatUploadDate(item.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleDownloadGalleryImage(item)}
+                  className="mt-3 w-full py-2 px-3 rounded-xl bg-[#F4F7F5] hover:bg-[#064E3B] text-[#064E3B] hover:text-white border border-[#DCE5DF] text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download
+                </button>
+              </article>
+            ))}
           </div>
 
           {/* Load More Pagination */}
-          {hasMore && !searchQuery.trim() && (
+          {hasMore && (
             <div className="mt-10 flex justify-center">
               <button
                 type="button"
@@ -344,10 +301,9 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
             </div>
 
             <div className="aspect-square w-full rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2]">
-              <img
-                src={lightboxItem.imageUrl}
+              <GalleryPortraitImage
+                item={lightboxItem}
                 alt={lightboxItem.supporterName || 'DMC JUI Punjab campaign picture'}
-                referrerPolicy="no-referrer"
                 className="w-full h-full object-contain"
               />
             </div>

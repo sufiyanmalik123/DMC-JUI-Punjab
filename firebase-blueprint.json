@@ -80,8 +80,8 @@
         "imageUrl": {
           "type": "string",
           "maxLength": 300,
-          "pattern": "^/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)$",
-          "description": "Validated relative URL path to the composed campaign image."
+          "pattern": "^(/uploads/gallery/[a-zA-Z0-9_\\-]+\\.(png|jpg|jpeg)|firestore://[a-zA-Z0-9_\\-]+)$",
+          "description": "Validated image path or Firestore chunk identifier for the composed campaign image."
         },
         "supporterName": {
           "type": "string",
@@ -102,6 +102,10 @@
           "type": "integer",
           "description": "Validated byte size of the uploaded image (max 10MB)."
         },
+        "chunkCount": {
+          "type": "integer",
+          "description": "Number of base64 image chunks stored in the chunks subcollection."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
@@ -109,6 +113,25 @@
         }
       },
       "required": ["imageUrl", "supporterName", "city", "mimeType", "fileSize", "createdAt"]
+    },
+    "ImageChunk": {
+      "title": "ImageChunk",
+      "description": "A bounded base64 chunk storing persistent gallery image bytes under the 1MB Firestore document limit.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "Zero-based chunk sequence index."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600000,
+          "pattern": "^[A-Za-z0-9+/=]+$",
+          "description": "Strict base64-encoded image slice."
+        }
+      },
+      "required": ["index", "data"]
     },
     "AdminUser": {
       "title": "AdminUser",
@@ -152,6 +175,10 @@
     "/gallery_items/{itemId}": {
       "schema": { "$ref": "#/entities/GalleryItem" },
       "description": "Publicly readable and creatable DMC Gallery items; only admins may update or delete."
+    },
+    "/gallery_items/{itemId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/ImageChunk" },
+      "description": "Persistent image data chunks associated atomically with each gallery item."
     },
     "/admins/{adminId}": {
       "schema": { "$ref": "#/entities/AdminUser" },

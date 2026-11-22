@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
 import { ProfileEditor } from './components/ProfileEditor';
 import {
+  initializeSupportersCounter,
   subscribeCampaignConfig,
   subscribeSupportersCount,
 } from './services/campaignService';
@@ -35,6 +36,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    void initializeSupportersCounter()
+      .then((initialCount) => {
+        if (active) setSupportersCount(initialCount);
+      })
+      .catch(() => {
+        // Real-time listener below continues syncing
+      });
+
     const unsubStats = subscribeSupportersCount((count) => {
       setSupportersCount(count);
     });
@@ -42,6 +52,7 @@ export default function App() {
       setConfig(nextConfig);
     });
     return () => {
+      active = false;
       unsubStats();
       unsubConfig();
     };
@@ -71,6 +82,7 @@ export default function App() {
             <ProfileEditor
               config={config}
               onOpenGallery={() => navigate('gallery')}
+              onSupportersUpdated={(nextCount) => setSupportersCount(nextCount)}
             />
           )}
           {route === 'gallery' && (

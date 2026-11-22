@@ -17,6 +17,7 @@ export interface GalleryItem {
   city: string;
   mimeType: 'image/png' | 'image/jpeg';
   fileSize: number;
+  chunkCount?: number;
   createdAt: Date | null;
 }
 
@@ -34,8 +35,7 @@ export const DEFAULT_CAMPAIGN_CONFIG: CampaignConfig = {
   brandTitle: 'DMC JUI Punjab',
   campaignTitle: 'Tahaffuz-e-Aaeen-e-Pakistan',
   campaignSubtitle: 'Awami Huqooq Conference · Sargodha · 26 November 2026',
-  editorPrompt:
-    'Import your portrait, adjust zoom and framing inside the official campaign frame, and download or share to the DMC Gallery.',
+  editorPrompt: '',
 };
 
 export const AUTHORIZED_ADMIN_EMAIL = 'graphicsmalik123@gmail.com';

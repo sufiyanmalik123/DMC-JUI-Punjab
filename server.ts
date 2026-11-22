@@ -231,15 +231,9 @@ app.post(
     const ext = pngInfo ? 'png' : 'jpg';
     const mimeType = pngInfo ? 'image/png' : 'image/jpeg';
     const filename = `dmc_${crypto.randomUUID().replace(/-/g, '')}.${ext}`;
-    const targetPath = path.resolve(GALLERY_DIR, filename);
-
-    if (!targetPath.startsWith(GALLERY_DIR + path.sep)) {
-      return res.status(500).json({ error: 'Invalid target storage path.' });
-    }
-
-    fs.writeFileSync(targetPath, file.buffer);
 
     return res.status(201).json({
+      validated: true,
       imageUrl: `/uploads/gallery/${filename}`,
       mimeType,
       fileSize: file.buffer.length,
