@@ -103,9 +103,9 @@ export const GalleryPortraitImage: React.FC<GalleryPortraitImageProps> = ({
   return (
     <div ref={containerRef} className="w-full h-full">
       {failed ? (
-        <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 text-[#5C6660] bg-[#F4F5F3]">
-          <ImageOff className="w-6 h-6 mb-2 text-[#8A948D]" />
-          <span className="text-xs font-medium">Image unavailable</span>
+        <div className="w-full h-full flex flex-col items-center justify-center text-center p-1.5 sm:p-4 text-[#5C6660] bg-[#F4F5F3]">
+          <ImageOff className="w-4 h-4 sm:w-6 sm:h-6 mb-1 sm:mb-2 text-[#8A948D]" />
+          <span className="text-[9px] sm:text-xs leading-tight font-medium">Unavailable</span>
         </div>
       ) : !resolvedUrl ? (
         <div className="w-full h-full bg-[#EAECE8] animate-pulse" />
