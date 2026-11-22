@@ -344,6 +344,17 @@ app.all('/api/*', (_req, res) => {
   res.status(404).json({ error: 'API endpoint not found.' });
 });
 
+// Apply browser cache headers for static slideshow & campaign image assets across dev and production
+app.use('/assets', (req, res, next) => {
+  if (req.path.startsWith('/slideshow/') && req.path.endsWith('.webp')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else if (/\.(png|jpg|jpeg|webp)$/i.test(req.path)) {
+    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+  }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -354,7 +365,20 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distDir = path.resolve(process.cwd(), 'dist');
-    app.use(express.static(distDir));
+    app.use(
+      express.static(distDir, {
+        maxAge: '7d',
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.html')) {
+            res.setHeader('Cache-Control', 'no-cache');
+          } else if (filePath.includes(`${path.sep}assets${path.sep}slideshow${path.sep}`)) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          } else if (/\.(webp|png|jpg|jpeg|js|css|woff2?)$/i.test(filePath)) {
+            res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+          }
+        },
+      }),
+    );
     app.get('*', (req, res) => {
       if (req.path.startsWith('/api/') || req.path.startsWith('/uploads/')) {
         return res.status(404).json({ error: 'Not found' });

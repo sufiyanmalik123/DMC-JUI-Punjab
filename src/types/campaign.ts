@@ -18,6 +18,7 @@ export interface GalleryItem {
   mimeType: 'image/png' | 'image/jpeg';
   fileSize: number;
   chunkCount?: number;
+  hasThumbnail?: boolean;
   createdAt: Date | null;
 }
 

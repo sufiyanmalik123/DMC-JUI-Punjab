@@ -441,12 +441,19 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         blob = await exportCompositionBlob(1100, 'image/jpeg');
       }
 
+      const thumbCanvas = document.createElement('canvas');
+      renderToCanvas(thumbCanvas, 400);
+      const thumbnailBlob = await new Promise<Blob | undefined>((resolve) => {
+        thumbCanvas.toBlob((b) => resolve(b ?? undefined), 'image/jpeg', 0.78);
+      });
+
       await uploadToGalleryWithProgress(
         blob,
         {
           supporterName: '',
           city: '',
           mimeType,
+          thumbnailBlob,
         },
         (pct) => setUploadProgress(pct),
       );

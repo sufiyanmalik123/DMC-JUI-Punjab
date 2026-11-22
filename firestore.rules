@@ -106,6 +106,7 @@ service cloud.firestore {
           'mimeType',
           'fileSize',
           'chunkCount',
+          'hasThumbnail',
           'createdAt'
         ])
         && data.imageUrl is string
@@ -123,6 +124,7 @@ service cloud.firestore {
         && data.fileSize > 0
         && data.fileSize <= 10485760
         && (!('chunkCount' in data) || (data.chunkCount is int && data.chunkCount >= 0 && data.chunkCount <= 12))
+        && (!('hasThumbnail' in data) || data.hasThumbnail is bool)
         && data.createdAt is timestamp;
     }
 

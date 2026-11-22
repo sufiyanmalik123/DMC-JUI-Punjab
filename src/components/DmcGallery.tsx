@@ -264,7 +264,7 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-            {allItems.map((item) => {
+            {allItems.map((item, idx) => {
               const isMenuOpen = openMenuId === item.id;
               const isDownloading = downloadingId === item.id;
               return (
@@ -288,6 +288,8 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
                     >
                       <GalleryPortraitImage
                         item={item}
+                        variant="thumbnail"
+                        eager={idx < 4}
                         alt={
                           item.supporterName
                             ? `${item.supporterName} campaign profile portrait`
@@ -414,6 +416,8 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
             <div className="aspect-square w-full rounded-xl overflow-hidden bg-[#F4F5F3] border border-[#E4E7E2]">
               <GalleryPortraitImage
                 item={lightboxItem}
+                variant="full"
+                eager
                 alt={lightboxItem.supporterName || 'DMC JUI Punjab campaign picture'}
                 className="w-full h-full object-contain"
               />

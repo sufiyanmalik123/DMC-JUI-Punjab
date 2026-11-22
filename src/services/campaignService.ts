@@ -38,8 +38,56 @@ const UPLOAD_COOLDOWN_MS = 1500;
 
 let lastUploadTimestamp = 0;
 
+const MEDIA_CACHE_NAME = 'dmc-gallery-media-v1';
+
 const galleryBlobUrlCache = new Map<string, string>();
 const galleryBlobInflight = new Map<string, Promise<string>>();
+const galleryThumbUrlCache = new Map<string, string>();
+const galleryThumbInflight = new Map<string, Promise<string>>();
+
+async function readPersistentCachedBlob(key: string): Promise<Blob | null> {
+  if (typeof window === 'undefined' || !('caches' in window)) return null;
+  try {
+    const cache = await window.caches.open(MEDIA_CACHE_NAME);
+    const matched = await cache.match(key);
+    if (!matched) return null;
+    const blob = await matched.blob();
+    return blob.size > 0 ? blob : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePersistentCachedBlob(key: string, blob: Blob): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const cache = await window.caches.open(MEDIA_CACHE_NAME);
+    await cache.put(
+      key,
+      new Response(blob, {
+        headers: {
+          'Content-Type': blob.type || 'image/png',
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        },
+      }),
+    );
+  } catch {
+    // Ignore storage quota or private-mode restrictions
+  }
+}
+
+async function deletePersistentCachedItem(itemId: string): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
+  try {
+    const cache = await window.caches.open(MEDIA_CACHE_NAME);
+    await Promise.all([
+      cache.delete(`/_dmc_cache/full/${itemId}`),
+      cache.delete(`/_dmc_cache/thumb/${itemId}`),
+    ]);
+  } catch {
+    // Ignore cache cleanup errors
+  }
+}
 
 function mapTimestamp(value: unknown): Date | null {
   if (value instanceof Timestamp) {
@@ -58,6 +106,7 @@ function mapGalleryDoc(snap: QueryDocumentSnapshot<DocumentData>): GalleryItem {
     mimeType: data.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png',
     fileSize: typeof data.fileSize === 'number' ? data.fileSize : 0,
     chunkCount: typeof data.chunkCount === 'number' ? data.chunkCount : 0,
+    hasThumbnail: Boolean(data.hasThumbnail),
     createdAt: mapTimestamp(data.createdAt),
   };
 }
@@ -117,8 +166,73 @@ async function validateImageBlob(blob: Blob, expectedMime: 'image/png' | 'image/
   }
 }
 
-export function getCachedGalleryItemImageUrl(itemId: string): string | null {
+export function getCachedGalleryItemImageUrl(
+  itemId: string,
+  variant: 'thumbnail' | 'full' = 'full',
+): string | null {
+  if (variant === 'thumbnail') {
+    return galleryThumbUrlCache.get(itemId) || galleryBlobUrlCache.get(itemId) || null;
+  }
   return galleryBlobUrlCache.get(itemId) || null;
+}
+
+export async function resolveGalleryItemThumbnailUrl(item: GalleryItem): Promise<string> {
+  if (!item.chunkCount || item.chunkCount <= 0) {
+    if (!item.imageUrl) {
+      throw new Error('Image URL is missing.');
+    }
+    return item.imageUrl;
+  }
+
+  const cachedFull = galleryBlobUrlCache.get(item.id);
+  if (cachedFull) {
+    return cachedFull;
+  }
+
+  const cachedThumb = galleryThumbUrlCache.get(item.id);
+  if (cachedThumb) {
+    return cachedThumb;
+  }
+
+  if (!item.hasThumbnail) {
+    return resolveGalleryItemImageUrl(item);
+  }
+
+  const inflight = galleryThumbInflight.get(item.id);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async () => {
+    const cacheKey = `/_dmc_cache/thumb/${item.id}`;
+    const persisted = await readPersistentCachedBlob(cacheKey);
+    if (persisted) {
+      const objectUrl = URL.createObjectURL(persisted);
+      galleryThumbUrlCache.set(item.id, objectUrl);
+      return objectUrl;
+    }
+
+    const thumbSnap = await getDoc(doc(db, GALLERY_COLLECTION, item.id, 'chunks', 'thumb'));
+    if (thumbSnap.exists()) {
+      const thumbData = thumbSnap.data()?.data;
+      if (typeof thumbData === 'string' && thumbData.length > 0) {
+        const blob = base64ToBlob(thumbData, 'image/jpeg');
+        void writePersistentCachedBlob(cacheKey, blob);
+        const objectUrl = URL.createObjectURL(blob);
+        galleryThumbUrlCache.set(item.id, objectUrl);
+        return objectUrl;
+      }
+    }
+
+    return resolveGalleryItemImageUrl(item);
+  })();
+
+  galleryThumbInflight.set(item.id, promise);
+  try {
+    return await promise;
+  } finally {
+    galleryThumbInflight.delete(item.id);
+  }
 }
 
 export async function resolveGalleryItemImageUrl(item: GalleryItem): Promise<string> {
@@ -140,7 +254,12 @@ export async function resolveGalleryItemImageUrl(item: GalleryItem): Promise<str
   }
 
   const promise = (async () => {
-    const blob = await assembleChunkedBlob(item);
+    const cacheKey = `/_dmc_cache/full/${item.id}`;
+    const persisted = await readPersistentCachedBlob(cacheKey);
+    const blob = persisted ?? (await assembleChunkedBlob(item));
+    if (!persisted) {
+      void writePersistentCachedBlob(cacheKey, blob);
+    }
     const objectUrl = URL.createObjectURL(blob);
     galleryBlobUrlCache.set(item.id, objectUrl);
     return objectUrl;
@@ -185,7 +304,14 @@ export async function fetchGalleryItemBlob(item: GalleryItem): Promise<Blob> {
         return await cachedResp.blob();
       }
     }
-    return await assembleChunkedBlob(item);
+    const cacheKey = `/_dmc_cache/full/${item.id}`;
+    const persisted = await readPersistentCachedBlob(cacheKey);
+    if (persisted) {
+      return persisted;
+    }
+    const blob = await assembleChunkedBlob(item);
+    void writePersistentCachedBlob(cacheKey, blob);
+    return blob;
   }
 
   if (!item.imageUrl) {
@@ -374,6 +500,7 @@ export async function uploadToGalleryWithProgress(
     supporterName: string;
     city: string;
     mimeType: 'image/png' | 'image/jpeg';
+    thumbnailBlob?: Blob;
   },
   onProgress: (percent: number) => void,
 ): Promise<GalleryItem> {
@@ -396,12 +523,21 @@ export async function uploadToGalleryWithProgress(
     throw new Error('Composed image is too large to save to the gallery.');
   }
 
+  let thumbBase64: string | null = null;
+  if (meta.thumbnailBlob && meta.thumbnailBlob.size > 128 && meta.thumbnailBlob.size <= 350_000) {
+    const encodedThumb = await blobToBase64(meta.thumbnailBlob);
+    if (encodedThumb.length > 0 && encodedThumb.length <= 500_000) {
+      thumbBase64 = encodedThumb;
+    }
+  }
+
   onProgress(65);
 
   const cleanName = meta.supporterName.trim().slice(0, 60);
   const cleanCity = meta.city.trim().slice(0, 60);
   const itemRef = doc(collection(db, GALLERY_COLLECTION));
   const imageRefUrl = `firestore://${itemRef.id}`;
+  const hasThumbnail = Boolean(thumbBase64);
 
   try {
     const batch = writeBatch(db);
@@ -412,6 +548,7 @@ export async function uploadToGalleryWithProgress(
       mimeType: meta.mimeType,
       fileSize: blob.size,
       chunkCount: chunks.length,
+      hasThumbnail,
       createdAt: serverTimestamp(),
     });
 
@@ -422,12 +559,26 @@ export async function uploadToGalleryWithProgress(
       });
     }
 
+    if (thumbBase64) {
+      batch.set(doc(db, GALLERY_COLLECTION, itemRef.id, 'chunks', 'thumb'), {
+        index: 0,
+        data: thumbBase64,
+      });
+    }
+
     await batch.commit();
     lastUploadTimestamp = Date.now();
 
-    // Pre-warm client cache with the newly uploaded image
+    // Pre-warm both memory and persistent Cache API with full & thumbnail blobs
     const localUrl = URL.createObjectURL(blob);
     galleryBlobUrlCache.set(itemRef.id, localUrl);
+    void writePersistentCachedBlob(`/_dmc_cache/full/${itemRef.id}`, blob);
+
+    if (meta.thumbnailBlob && hasThumbnail) {
+      const thumbUrl = URL.createObjectURL(meta.thumbnailBlob);
+      galleryThumbUrlCache.set(itemRef.id, thumbUrl);
+      void writePersistentCachedBlob(`/_dmc_cache/thumb/${itemRef.id}`, meta.thumbnailBlob);
+    }
 
     onProgress(100);
     return {
@@ -438,6 +589,7 @@ export async function uploadToGalleryWithProgress(
       mimeType: meta.mimeType,
       fileSize: blob.size,
       chunkCount: chunks.length,
+      hasThumbnail,
       createdAt: new Date(),
     };
   } catch (error) {
@@ -528,9 +680,14 @@ export async function deleteGalleryItemAsAdmin(
     for (let i = 0; i < chunkCount; i++) {
       batch.delete(doc(db, GALLERY_COLLECTION, item.id, 'chunks', String(i)));
     }
+    if (item.hasThumbnail) {
+      batch.delete(doc(db, GALLERY_COLLECTION, item.id, 'chunks', 'thumb'));
+    }
     batch.delete(doc(db, GALLERY_COLLECTION, item.id));
     await batch.commit();
     galleryBlobUrlCache.delete(item.id);
+    galleryThumbUrlCache.delete(item.id);
+    void deletePersistentCachedItem(item.id);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, docPath);
   }

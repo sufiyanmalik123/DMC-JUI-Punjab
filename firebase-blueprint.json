@@ -106,6 +106,10 @@
           "type": "integer",
           "description": "Number of base64 image chunks stored in the chunks subcollection."
         },
+        "hasThumbnail": {
+          "type": "boolean",
+          "description": "Whether a lightweight gallery thumbnail exists in chunks/thumb."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",

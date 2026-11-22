@@ -1,12 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
-const SLIDESHOW_IMAGES = [
-  '/assets/aistudio/image_e8ba54e4.png',
-  '/assets/aistudio/image_4d8c9889.png',
-  '/assets/aistudio/image_947e871b.png',
-  '/assets/aistudio/image_5184b4aa.png',
-  '/assets/aistudio/image_f7f2d4e5.png',
+interface SlideshowAsset {
+  desktop: string;
+  mobile: string;
+}
+
+const SLIDESHOW_ASSETS: readonly SlideshowAsset[] = [
+  {
+    desktop: '/assets/slideshow/slide-1-desktop.webp',
+    mobile: '/assets/slideshow/slide-1-mobile.webp',
+  },
+  {
+    desktop: '/assets/slideshow/slide-2-desktop.webp',
+    mobile: '/assets/slideshow/slide-2-mobile.webp',
+  },
+  {
+    desktop: '/assets/slideshow/slide-3-desktop.webp',
+    mobile: '/assets/slideshow/slide-3-mobile.webp',
+  },
+  {
+    desktop: '/assets/slideshow/slide-4-desktop.webp',
+    mobile: '/assets/slideshow/slide-4-mobile.webp',
+  },
+  {
+    desktop: '/assets/slideshow/slide-5-desktop.webp',
+    mobile: '/assets/slideshow/slide-5-mobile.webp',
+  },
 ] as const;
 
 type TransitionKind = 'crossfade' | 'fade' | 'zoomIn' | 'zoomOut';
@@ -19,6 +39,58 @@ const TRANSITION_KINDS: TransitionKind[] = [
 ];
 
 const BACKGROUND_OPACITY = 0.18;
+
+// Module-level cache retains decoded Image instances across cycles and route switches
+const preloadedSlideCache = new Map<string, HTMLImageElement>();
+const preloadingInflight = new Map<string, Promise<void>>();
+
+function preloadAndDecodeImage(src: string): Promise<void> {
+  const existing = preloadedSlideCache.get(src);
+  if (existing && existing.complete && existing.naturalWidth > 0) {
+    return Promise.resolve();
+  }
+
+  const inflight = preloadingInflight.get(src);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = new Promise<void>((resolve) => {
+    const img = new Image();
+    img.decoding = 'async';
+
+    const finish = () => {
+      preloadedSlideCache.set(src, img);
+      preloadingInflight.delete(src);
+      resolve();
+    };
+
+    img.onload = () => {
+      if (typeof img.decode === 'function') {
+        img.decode().then(finish).catch(finish);
+      } else {
+        finish();
+      }
+    };
+    img.onerror = () => {
+      preloadingInflight.delete(src);
+      resolve();
+    };
+    img.src = src;
+
+    if (img.complete && img.naturalWidth > 0) {
+      finish();
+    }
+  });
+
+  preloadingInflight.set(src, promise);
+  return promise;
+}
+
+function getResponsiveSlideUrl(index: number, isMobile: boolean): string {
+  const asset = SLIDESHOW_ASSETS[index % SLIDESHOW_ASSETS.length];
+  return isMobile ? asset.mobile : asset.desktop;
+}
 
 function randomDurationMs(): number {
   return 5000 + Math.floor(Math.random() * 5001);
@@ -44,6 +116,17 @@ interface SlideState {
 export const BackgroundSlideshow: React.FC = () => {
   const shouldReduceMotion = useReducedMotion();
 
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(max-width: 767px)').matches;
+  });
+
+  const [firstSlideReady, setFirstSlideReady] = useState<boolean>(() => {
+    const firstUrl = getResponsiveSlideUrl(0, isMobile);
+    const cached = preloadedSlideCache.get(firstUrl);
+    return Boolean(cached && cached.complete && cached.naturalWidth > 0);
+  });
+
   const [slide, setSlide] = useState<SlideState>(() => ({
     index: 0,
     cycle: 0,
@@ -52,18 +135,43 @@ export const BackgroundSlideshow: React.FC = () => {
     fadeSec: 1.75,
   }));
 
+  // Track responsive viewport breakpoint cleanly without redundant re-fetches
   useEffect(() => {
-    let cancelled = false;
-    const nextIndex = (slide.index + 1) % SLIDESHOW_IMAGES.length;
-    const nextSrc = SLIDESHOW_IMAGES[nextIndex];
+    if (typeof window === 'undefined') return;
+    const mql = window.matchMedia('(max-width: 767px)');
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
 
-    let nextImageLoaded = false;
+  // Preload & decode the first slide immediately before displaying it
+  useEffect(() => {
+    let active = true;
+    const firstUrl = getResponsiveSlideUrl(0, isMobile);
+    void preloadAndDecodeImage(firstUrl).then(() => {
+      if (active) setFirstSlideReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isMobile]);
+
+  // Preload next sequential image during the current slide's visible window; advance only when ready
+  useEffect(() => {
+    if (!firstSlideReady) return;
+    let cancelled = false;
+
+    const nextIndex = (slide.index + 1) % SLIDESHOW_ASSETS.length;
+    const nextUrl = getResponsiveSlideUrl(nextIndex, isMobile);
+
+    let nextReady = false;
     let timerElapsed = false;
 
     const advance = () => {
-      if (cancelled || !timerElapsed) return;
+      if (cancelled || !timerElapsed || !nextReady) return;
       setSlide((prev) => ({
-        index: (prev.index + 1) % SLIDESHOW_IMAGES.length,
+        index: (prev.index + 1) % SLIDESHOW_ASSETS.length,
         cycle: prev.cycle + 1,
         transition: pickNextTransition(prev.transition),
         durationMs: randomDurationMs(),
@@ -71,25 +179,15 @@ export const BackgroundSlideshow: React.FC = () => {
       }));
     };
 
-    const preloader = new Image();
-    preloader.decoding = 'async';
-    preloader.onload = () => {
-      nextImageLoaded = true;
+    void preloadAndDecodeImage(nextUrl).then(() => {
+      nextReady = true;
       if (timerElapsed) advance();
-    };
-    preloader.onerror = () => {
-      nextImageLoaded = true;
-      if (timerElapsed) advance();
-    };
-    preloader.src = nextSrc;
+    });
 
     const timer = window.setTimeout(() => {
       timerElapsed = true;
-      if (nextImageLoaded || preloader.complete) {
+      if (nextReady) {
         advance();
-      } else {
-        // Fallback safety in case network is slow so sequence continues
-        window.setTimeout(advance, 1500);
       }
     }, slide.durationMs);
 
@@ -97,9 +195,13 @@ export const BackgroundSlideshow: React.FC = () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [slide.index, slide.cycle, slide.durationMs]);
+  }, [firstSlideReady, isMobile, slide.index, slide.cycle, slide.durationMs]);
 
-  const currentSrc = SLIDESHOW_IMAGES[slide.index];
+  if (!firstSlideReady) {
+    return null;
+  }
+
+  const currentSrc = getResponsiveSlideUrl(slide.index, isMobile);
   const displaySec = slide.durationMs / 1000;
   const fadeSec = shouldReduceMotion ? 0.5 : slide.fadeSec;
 
@@ -122,7 +224,7 @@ export const BackgroundSlideshow: React.FC = () => {
           : 1.0;
 
   const enterDelay =
-    !shouldReduceMotion && slide.transition === 'fade' ? 0.3 : 0;
+    !shouldReduceMotion && slide.transition === 'fade' ? 0.28 : 0;
 
   return (
     <div
@@ -135,9 +237,8 @@ export const BackgroundSlideshow: React.FC = () => {
           src={currentSrc}
           alt=""
           decoding="async"
-          fetchPriority={slide.cycle === 0 ? 'high' : 'low'}
           initial={{
-            opacity: 0,
+            opacity: slide.cycle === 0 ? BACKGROUND_OPACITY : 0,
             scale: initialScale,
           }}
           animate={{
@@ -146,7 +247,7 @@ export const BackgroundSlideshow: React.FC = () => {
             transition: {
               opacity: {
                 duration: fadeSec,
-                delay: enterDelay,
+                delay: slide.cycle === 0 ? 0 : enterDelay,
                 ease: 'easeInOut',
               },
               scale: {
