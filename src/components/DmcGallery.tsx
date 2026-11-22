@@ -23,15 +23,6 @@ function isDisplayableGalleryItem(item: GalleryItem): boolean {
   return Boolean(item.imageUrl);
 }
 
-function formatUploadDate(date: Date | null): string {
-  if (!date) return 'Just now';
-  return date.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 function extractReadableError(err: Error): string {
   try {
     const parsed = JSON.parse(err.message);
@@ -239,8 +230,6 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
               className="bg-white border border-[#E4E7E2] rounded-2xl p-3 animate-pulse"
             >
               <div className="aspect-square rounded-xl bg-[#EAECE8]" />
-              <div className="mt-3 h-4 w-2/3 bg-[#EAECE8] rounded" />
-              <div className="mt-1.5 h-3 w-1/3 bg-[#EAECE8] rounded" />
             </div>
           ))}
         </div>
@@ -345,23 +334,6 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
                       </AnimatePresence>
                     </div>
                   </div>
-
-                  <div className="mt-3 px-1">
-                    <h3 className="font-display text-sm font-semibold text-[#141D18] truncate">
-                      {item.supporterName || 'DMC JUI Punjab Supporter'}
-                    </h3>
-                    <div className="mt-0.5 flex items-center gap-1.5 text-xs text-[#5C6660] truncate">
-                      {item.city && (
-                        <>
-                          <span className="truncate">{item.city}</span>
-                          <span aria-hidden="true">·</span>
-                        </>
-                      )}
-                      <span className="whitespace-nowrap">
-                        {formatUploadDate(item.createdAt)}
-                      </span>
-                    </div>
-                  </div>
                 </article>
               );
             })}
@@ -393,16 +365,7 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
             className="bg-white rounded-2xl max-w-xl w-full p-5 border border-[#E4E7E2]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <h3 className="font-display text-lg font-bold text-[#141D18]">
-                  {lightboxItem.supporterName || 'DMC JUI Punjab Supporter'}
-                </h3>
-                <p className="text-xs text-[#5C6660] mt-0.5">
-                  {lightboxItem.city ? `${lightboxItem.city} · ` : ''}
-                  {formatUploadDate(lightboxItem.createdAt)}
-                </p>
-              </div>
+            <div className="flex items-center justify-end mb-3">
               <button
                 type="button"
                 onClick={() => setLightboxItem(null)}

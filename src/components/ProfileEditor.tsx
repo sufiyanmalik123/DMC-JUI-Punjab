@@ -29,8 +29,9 @@ interface CutoutBounds {
 
 const PREVIEW_CANVAS_SIZE = 1000;
 const DOWNLOAD_EXPORT_SIZE = 2000;
-const GALLERY_EXPORT_SIZE = 1000;
-const MAX_FIRESTORE_BINARY_BYTES = 1_800_000;
+const GALLERY_EXPORT_SIZE = 1080;
+const GALLERY_THUMB_SIZE = 360;
+const SINGLE_CHUNK_BINARY_TARGET = 290_000;
 
 function extractReadableUploadError(err: unknown, fallback: string): string {
   if (err instanceof Error) {
@@ -428,31 +429,59 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
     setActionError(null);
     setUploadSuccess(null);
     setIsUploading(true);
-    setUploadProgress(5);
+    setUploadProgress(10);
 
     try {
-      let mimeType: 'image/png' | 'image/jpeg' = 'image/png';
-      let blob = await exportCompositionBlob(GALLERY_EXPORT_SIZE, 'image/png');
-      if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
-        blob = await exportCompositionBlob(760, 'image/png');
-      }
-      if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
-        mimeType = 'image/jpeg';
-        blob = await exportCompositionBlob(1100, 'image/jpeg');
-      }
+      // Yield a paint frame so the uploading bar and button feedback appear immediately
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+      const exportCanvas = document.createElement('canvas');
+      renderToCanvas(exportCanvas, GALLERY_EXPORT_SIZE);
+      setUploadProgress(20);
+
+      const canvasToBlob = (
+        source: HTMLCanvasElement,
+        type: 'image/png' | 'image/jpeg',
+        quality?: number,
+      ) =>
+        new Promise<Blob>((resolve, reject) => {
+          source.toBlob(
+            (b) => {
+              if (b) resolve(b);
+              else reject(new Error('Could not export profile composition.'));
+            },
+            type,
+            quality,
+          );
+        });
 
       const thumbCanvas = document.createElement('canvas');
-      renderToCanvas(thumbCanvas, 400);
-      const thumbnailBlob = await new Promise<Blob | undefined>((resolve) => {
-        thumbCanvas.toBlob((b) => resolve(b ?? undefined), 'image/jpeg', 0.78);
-      });
+      thumbCanvas.width = GALLERY_THUMB_SIZE;
+      thumbCanvas.height = GALLERY_THUMB_SIZE;
+      const thumbCtx = thumbCanvas.getContext('2d');
+      if (thumbCtx) {
+        thumbCtx.drawImage(exportCanvas, 0, 0, GALLERY_THUMB_SIZE, GALLERY_THUMB_SIZE);
+      }
+
+      const [initialBlob, thumbnailBlob] = await Promise.all([
+        canvasToBlob(exportCanvas, 'image/jpeg', 0.9),
+        thumbCtx
+          ? canvasToBlob(thumbCanvas, 'image/jpeg', 0.76).catch(() => undefined)
+          : Promise.resolve(undefined),
+      ]);
+
+      // Keep payload inside a single Firestore chunk (~290KB binary) for rapid upload
+      let blob = initialBlob;
+      if (blob.size > SINGLE_CHUNK_BINARY_TARGET) {
+        blob = await canvasToBlob(exportCanvas, 'image/jpeg', 0.84);
+      }
 
       await uploadToGalleryWithProgress(
         blob,
         {
           supporterName: '',
           city: '',
-          mimeType,
+          mimeType: 'image/jpeg',
           thumbnailBlob,
         },
         (pct) => setUploadProgress(pct),

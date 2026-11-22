@@ -112,6 +112,23 @@ function mapGalleryDoc(snap: QueryDocumentSnapshot<DocumentData>): GalleryItem {
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
+  if (typeof FileReader !== 'undefined') {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        const commaIdx = result.indexOf(',');
+        if (commaIdx === -1) {
+          reject(new Error('Could not encode image data.'));
+          return;
+        }
+        resolve(result.slice(commaIdx + 1));
+      };
+      reader.onerror = () => reject(new Error('Failed to read composed image.'));
+      reader.readAsDataURL(blob);
+    });
+  }
+
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const blockSize = 0x2000;
@@ -509,11 +526,23 @@ export async function uploadToGalleryWithProgress(
     throw new Error('Please wait a moment before uploading again.');
   }
 
-  onProgress(15);
+  onProgress(30);
   await validateImageBlob(blob, meta.mimeType);
 
-  onProgress(35);
-  const base64 = await blobToBase64(blob);
+  onProgress(48);
+  const shouldEncodeThumb = Boolean(
+    meta.thumbnailBlob &&
+      meta.thumbnailBlob.size > 128 &&
+      meta.thumbnailBlob.size <= 350_000,
+  );
+
+  const [base64, encodedThumb] = await Promise.all([
+    blobToBase64(blob),
+    shouldEncodeThumb && meta.thumbnailBlob
+      ? blobToBase64(meta.thumbnailBlob)
+      : Promise.resolve(null),
+  ]);
+
   const chunks: string[] = [];
   for (let offset = 0; offset < base64.length; offset += CHUNK_CHAR_LIMIT) {
     chunks.push(base64.slice(offset, offset + CHUNK_CHAR_LIMIT));
@@ -523,15 +552,12 @@ export async function uploadToGalleryWithProgress(
     throw new Error('Composed image is too large to save to the gallery.');
   }
 
-  let thumbBase64: string | null = null;
-  if (meta.thumbnailBlob && meta.thumbnailBlob.size > 128 && meta.thumbnailBlob.size <= 350_000) {
-    const encodedThumb = await blobToBase64(meta.thumbnailBlob);
-    if (encodedThumb.length > 0 && encodedThumb.length <= 500_000) {
-      thumbBase64 = encodedThumb;
-    }
-  }
+  const thumbBase64 =
+    encodedThumb && encodedThumb.length > 0 && encodedThumb.length <= 500_000
+      ? encodedThumb
+      : null;
 
-  onProgress(65);
+  onProgress(72);
 
   const cleanName = meta.supporterName.trim().slice(0, 60);
   const cleanCity = meta.city.trim().slice(0, 60);
@@ -566,6 +592,7 @@ export async function uploadToGalleryWithProgress(
       });
     }
 
+    onProgress(86);
     await batch.commit();
     lastUploadTimestamp = Date.now();
 

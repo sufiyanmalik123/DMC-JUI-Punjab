@@ -21,7 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-[#E4E7E2]">
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 sm:gap-8">
+      <div className="max-w-6xl mx-auto px-2.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-1.5 sm:gap-8">
         {/* Zone 1: Brand Wordmark (Top-Left) */}
         <a
           href="#editor"
@@ -29,13 +29,13 @@ export const Header: React.FC<HeaderProps> = ({
             e.preventDefault();
             onNavigate('editor');
           }}
-          className="font-display text-[13px] sm:text-xl font-bold tracking-tight text-[#064E3B] whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#064E3B] rounded"
+          className="font-display text-[12px] sm:text-xl font-bold tracking-tight text-[#064E3B] whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#064E3B] rounded-lg"
         >
           {brandTitle}
         </a>
 
         {/* Zone 2: Single-line Navigation Links (Centered between Brand & Supporters on all screens) */}
-        <nav className="flex items-center gap-3 sm:gap-7 text-[11px] sm:text-sm font-medium min-w-0">
+        <nav className="flex items-center gap-2 sm:gap-7 text-[10.5px] sm:text-sm font-medium min-w-0">
           {navItems.map((item) => {
             const isActive = activeRoute === item.route;
             return (
@@ -61,10 +61,10 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Zone 3: Live SUPPORTERS Counter (Top-Right) */}
         <div className="flex items-center shrink-0">
           <div
-            className="flex items-baseline gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 border border-[#E4E7E2] bg-[#FAF9F6] rounded-lg"
+            className="flex items-baseline gap-1 sm:gap-2 px-1.5 sm:px-3 py-1 sm:py-1.5 border border-[#E4E7E2] bg-[#FAF9F6] rounded-lg"
             aria-label={`Supporters count: ${supportersCount.toLocaleString()}`}
           >
-            <span className="text-[9px] sm:text-[11px] font-semibold tracking-[0.06em] sm:tracking-[0.08em] text-[#5C6660] whitespace-nowrap">
+            <span className="text-[8.5px] sm:text-[11px] font-semibold tracking-[0.04em] sm:tracking-[0.08em] text-[#5C6660] whitespace-nowrap">
               SUPPORTERS
             </span>
             <span className="font-mono-tabular text-xs sm:text-lg font-semibold text-[#064E3B] whitespace-nowrap">
