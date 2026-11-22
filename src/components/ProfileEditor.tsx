@@ -30,7 +30,23 @@ interface CutoutBounds {
 const PREVIEW_CANVAS_SIZE = 1000;
 const DOWNLOAD_EXPORT_SIZE = 2000;
 const GALLERY_EXPORT_SIZE = 1000;
-const MAX_FIRESTORE_BINARY_BYTES = 2_400_000;
+const MAX_FIRESTORE_BINARY_BYTES = 1_800_000;
+
+function extractReadableUploadError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    try {
+      const parsed = JSON.parse(err.message);
+      if (parsed && typeof parsed.error === 'string' && parsed.error.length > 0) {
+        return `Unable to upload to DMC Gallery: ${parsed.error}`;
+      }
+    } catch {
+      if (err.message) {
+        return err.message;
+      }
+    }
+  }
+  return fallback;
+}
 
 function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
   const sampleSize = 120;
@@ -90,6 +106,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const downloadInFlightRef = useRef(false);
+  const uploadInFlightRef = useRef(false);
 
   const [frameImage, setFrameImage] = useState<HTMLImageElement | null>(null);
   const [frameError, setFrameError] = useState<string | null>(null);
@@ -397,6 +414,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   };
 
   const handleUploadToDmc = async () => {
+    if (uploadInFlightRef.current) return;
     if (!userImage) {
       setActionError('Please import your photo before uploading to the DMC Gallery.');
       return;
@@ -406,6 +424,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       return;
     }
 
+    uploadInFlightRef.current = true;
     setActionError(null);
     setUploadSuccess(null);
     setIsUploading(true);
@@ -415,11 +434,11 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       let mimeType: 'image/png' | 'image/jpeg' = 'image/png';
       let blob = await exportCompositionBlob(GALLERY_EXPORT_SIZE, 'image/png');
       if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
-        blob = await exportCompositionBlob(820, 'image/png');
+        blob = await exportCompositionBlob(760, 'image/png');
       }
       if (blob.size > MAX_FIRESTORE_BINARY_BYTES) {
         mimeType = 'image/jpeg';
-        blob = await exportCompositionBlob(1200, 'image/jpeg');
+        blob = await exportCompositionBlob(1100, 'image/jpeg');
       }
 
       await uploadToGalleryWithProgress(
@@ -435,9 +454,10 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       setUploadSuccess('Your campaign profile picture is now live in the public DMC Gallery.');
     } catch (err) {
       setActionError(
-        err instanceof Error ? err.message : 'Failed to upload image to DMC Gallery.',
+        extractReadableUploadError(err, 'Failed to upload image to DMC Gallery.'),
       );
     } finally {
+      uploadInFlightRef.current = false;
       setIsUploading(false);
     }
   };

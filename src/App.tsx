@@ -98,32 +98,13 @@ export default function App() {
       </main>
 
       <footer className="border-t border-[#E4E7E2] bg-white mt-12">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-[#5C6660]">
-          <span>
-            {config.brandTitle} · Official Campaign Profile Platform
-          </span>
-          <div className="flex items-center gap-5">
-            <a
-              href="#editor"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate('editor');
-              }}
-              className="hover:text-[#141D18] transition-colors"
-            >
-              Profile Studio
-            </a>
-            <a
-              href="#gallery"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate('gallery');
-              }}
-              className="hover:text-[#141D18] transition-colors"
-            >
-              DMC Gallery
-            </a>
-          </div>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-[#5C6660] leading-relaxed">
+          <p className="tracking-[0.06em] text-[11px] font-medium">
+            Designed BY:
+          </p>
+          <p className="mt-0.5 font-display text-sm font-semibold text-[#141D18]">
+            Muhammad Sufiyan Malik
+          </p>
         </div>
       </footer>
     </div>

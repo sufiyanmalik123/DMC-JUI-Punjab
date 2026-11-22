@@ -33,7 +33,10 @@ const CONFIG_COLLECTION = 'campaign_config';
 const ACTIVE_CONFIG_ID = 'active';
 const GALLERY_COLLECTION = 'gallery_items';
 const GALLERY_EPOCH_TIMESTAMP = Timestamp.fromDate(new Date('2020-01-01T00:00:00Z'));
-const CHUNK_CHAR_LIMIT = 450_000;
+const CHUNK_CHAR_LIMIT = 400_000;
+const UPLOAD_COOLDOWN_MS = 1500;
+
+let lastUploadTimestamp = 0;
 
 const galleryBlobUrlCache = new Map<string, string>();
 const galleryBlobInflight = new Map<string, Promise<string>>();
@@ -62,16 +65,19 @@ function mapGalleryDoc(snap: QueryDocumentSnapshot<DocumentData>): GalleryItem {
 async function blobToBase64(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
-  const blockSize = 0x8000;
-  let binary = '';
+  const blockSize = 0x2000;
+  const parts: string[] = [];
   for (let i = 0; i < bytes.length; i += blockSize) {
     const slice = bytes.subarray(i, i + blockSize);
-    binary += String.fromCharCode(...slice);
+    parts.push(String.fromCharCode(...slice));
   }
-  return btoa(binary);
+  return btoa(parts.join(''));
 }
 
 function base64ToBlob(base64: string, mimeType: 'image/png' | 'image/jpeg'): Blob {
+  if (!/^[A-Za-z0-9+/=]+$/.test(base64)) {
+    throw new Error('Gallery image data is corrupted.');
+  }
   const binary = atob(base64);
   const len = binary.length;
   const bytes = new Uint8Array(len);
@@ -81,8 +87,45 @@ function base64ToBlob(base64: string, mimeType: 'image/png' | 'image/jpeg'): Blo
   return new Blob([bytes], { type: mimeType });
 }
 
+async function validateImageBlob(blob: Blob, expectedMime: 'image/png' | 'image/jpeg'): Promise<void> {
+  if (!(blob instanceof Blob) || blob.size < 128) {
+    throw new Error('Composed campaign image is empty or corrupted.');
+  }
+  if (blob.size > 10 * 1024 * 1024) {
+    throw new Error('Composed campaign image exceeds the maximum allowed size.');
+  }
+
+  const header = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+  const isPng =
+    header.length >= 8 &&
+    header[0] === 0x89 &&
+    header[1] === 0x50 &&
+    header[2] === 0x4e &&
+    header[3] === 0x47 &&
+    header[4] === 0x0d &&
+    header[5] === 0x0a &&
+    header[6] === 0x1a &&
+    header[7] === 0x0a;
+  const isJpeg =
+    header.length >= 3 && header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
+
+  if (expectedMime === 'image/png' && !isPng) {
+    throw new Error('Generated image is not a valid PNG.');
+  }
+  if (expectedMime === 'image/jpeg' && !isJpeg) {
+    throw new Error('Generated image is not a valid JPEG.');
+  }
+}
+
+export function getCachedGalleryItemImageUrl(itemId: string): string | null {
+  return galleryBlobUrlCache.get(itemId) || null;
+}
+
 export async function resolveGalleryItemImageUrl(item: GalleryItem): Promise<string> {
   if (!item.chunkCount || item.chunkCount <= 0) {
+    if (!item.imageUrl) {
+      throw new Error('Image URL is missing.');
+    }
     return item.imageUrl;
   }
 
@@ -97,25 +140,7 @@ export async function resolveGalleryItemImageUrl(item: GalleryItem): Promise<str
   }
 
   const promise = (async () => {
-    const chunkCount = item.chunkCount || 0;
-    const chunkRefs = Array.from({ length: chunkCount }, (_, i) =>
-      getDoc(doc(db, GALLERY_COLLECTION, item.id, 'chunks', String(i))),
-    );
-    const snapshots = await Promise.all(chunkRefs);
-    const parts: string[] = [];
-    for (let i = 0; i < snapshots.length; i++) {
-      const snap = snapshots[i];
-      if (!snap.exists()) {
-        throw new Error('Gallery image data is incomplete.');
-      }
-      const chunkData = snap.data()?.data;
-      if (typeof chunkData !== 'string' || chunkData.length === 0) {
-        throw new Error('Gallery image data is invalid.');
-      }
-      parts.push(chunkData);
-    }
-
-    const blob = base64ToBlob(parts.join(''), item.mimeType);
+    const blob = await assembleChunkedBlob(item);
     const objectUrl = URL.createObjectURL(blob);
     galleryBlobUrlCache.set(item.id, objectUrl);
     return objectUrl;
@@ -127,6 +152,55 @@ export async function resolveGalleryItemImageUrl(item: GalleryItem): Promise<str
   } finally {
     galleryBlobInflight.delete(item.id);
   }
+}
+
+async function assembleChunkedBlob(item: GalleryItem): Promise<Blob> {
+  const chunkCount = item.chunkCount || 0;
+  const chunkRefs = Array.from({ length: chunkCount }, (_, i) =>
+    getDoc(doc(db, GALLERY_COLLECTION, item.id, 'chunks', String(i))),
+  );
+  const snapshots = await Promise.all(chunkRefs);
+  const parts: string[] = [];
+  for (let i = 0; i < snapshots.length; i++) {
+    const snap = snapshots[i];
+    if (!snap.exists()) {
+      throw new Error('Gallery image data is incomplete.');
+    }
+    const chunkData = snap.data()?.data;
+    if (typeof chunkData !== 'string' || chunkData.length === 0) {
+      throw new Error('Gallery image data is invalid.');
+    }
+    parts.push(chunkData);
+  }
+
+  return base64ToBlob(parts.join(''), item.mimeType);
+}
+
+export async function fetchGalleryItemBlob(item: GalleryItem): Promise<Blob> {
+  if (item.chunkCount && item.chunkCount > 0) {
+    const cachedUrl = galleryBlobUrlCache.get(item.id);
+    if (cachedUrl) {
+      const cachedResp = await fetch(cachedUrl);
+      if (cachedResp.ok) {
+        return await cachedResp.blob();
+      }
+    }
+    return await assembleChunkedBlob(item);
+  }
+
+  if (!item.imageUrl) {
+    throw new Error('Image file is unavailable.');
+  }
+
+  const response = await fetch(item.imageUrl);
+  if (!response.ok) {
+    throw new Error('This image file is no longer available on the server.');
+  }
+  const blob = await response.blob();
+  if (!blob || blob.size === 0) {
+    throw new Error('Downloaded image is empty.');
+  }
+  return blob;
 }
 
 export function subscribeSupportersCount(
@@ -303,48 +377,15 @@ export async function uploadToGalleryWithProgress(
   },
   onProgress: (percent: number) => void,
 ): Promise<GalleryItem> {
-  onProgress(10);
+  const now = Date.now();
+  if (now - lastUploadTimestamp < UPLOAD_COOLDOWN_MS) {
+    throw new Error('Please wait a moment before uploading again.');
+  }
 
-  // Server-side rate limiting, spam check, and magic-byte image validation
-  await new Promise<void>((resolve, reject) => {
-    const formData = new FormData();
-    const ext = meta.mimeType === 'image/jpeg' ? 'jpg' : 'png';
-    formData.append('image', blob, `dmc-campaign.${ext}`);
-    formData.append('website', '');
+  onProgress(15);
+  await validateImageBlob(blob, meta.mimeType);
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/gallery/upload', true);
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && event.total > 0) {
-        const pct = 10 + Math.round((event.loaded / event.total) * 40);
-        onProgress(Math.min(50, pct));
-      }
-    };
-
-    xhr.onload = () => {
-      try {
-        const parsed = JSON.parse(xhr.responseText || '{}');
-        if (xhr.status >= 200 && xhr.status < 300 && parsed.imageUrl) {
-          resolve();
-        } else {
-          reject(new Error(parsed.error || 'Upload validation failed. Please try again.'));
-        }
-      } catch {
-        reject(new Error('Unexpected server response during upload.'));
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error('Network error while uploading image.'));
-    };
-
-    xhr.send(formData);
-  });
-
-  onProgress(60);
-
-  // Encode and store persistently in Firestore chunks so images survive restarts across all devices
+  onProgress(35);
   const base64 = await blobToBase64(blob);
   const chunks: string[] = [];
   for (let offset = 0; offset < base64.length; offset += CHUNK_CHAR_LIMIT) {
@@ -355,7 +396,7 @@ export async function uploadToGalleryWithProgress(
     throw new Error('Composed image is too large to save to the gallery.');
   }
 
-  onProgress(75);
+  onProgress(65);
 
   const cleanName = meta.supporterName.trim().slice(0, 60);
   const cleanCity = meta.city.trim().slice(0, 60);
@@ -382,6 +423,7 @@ export async function uploadToGalleryWithProgress(
     }
 
     await batch.commit();
+    lastUploadTimestamp = Date.now();
 
     // Pre-warm client cache with the newly uploaded image
     const localUrl = URL.createObjectURL(blob);

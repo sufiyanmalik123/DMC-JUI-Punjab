@@ -135,8 +135,7 @@ service cloud.firestore {
         && data.index < 12
         && data.data is string
         && data.data.size() >= 1
-        && data.data.size() <= 600000
-        && data.data.matches('^[A-Za-z0-9+/=]+$');
+        && data.data.size() <= 600000;
     }
 
     // Validation blueprint: AdminUser

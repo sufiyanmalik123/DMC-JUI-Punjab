@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ImageOff } from 'lucide-react';
-import { resolveGalleryItemImageUrl } from '../services/campaignService';
+import {
+  getCachedGalleryItemImageUrl,
+  resolveGalleryItemImageUrl,
+} from '../services/campaignService';
 import { GalleryItem } from '../types/campaign';
 
 interface GalleryPortraitImageProps {
@@ -14,17 +17,31 @@ export const GalleryPortraitImage: React.FC<GalleryPortraitImageProps> = ({
   alt,
   className = 'w-full h-full object-cover',
 }) => {
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(
-    item.chunkCount && item.chunkCount > 0 ? null : item.imageUrl,
-  );
+  const isChunked = Boolean(item.chunkCount && item.chunkCount > 0);
+  const initialUrl = isChunked
+    ? getCachedGalleryItemImageUrl(item.id)
+    : item.imageUrl || null;
+
+  const [resolvedUrl, setResolvedUrl] = useState<string | null>(initialUrl);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
     setFailed(false);
 
-    if (!item.chunkCount || item.chunkCount <= 0) {
-      setResolvedUrl(item.imageUrl);
+    if (!isChunked) {
+      if (!item.imageUrl) {
+        setResolvedUrl(null);
+        setFailed(true);
+      } else {
+        setResolvedUrl(item.imageUrl);
+      }
+      return;
+    }
+
+    const cached = getCachedGalleryItemImageUrl(item.id);
+    if (cached) {
+      setResolvedUrl(cached);
       return;
     }
 
@@ -40,15 +57,13 @@ export const GalleryPortraitImage: React.FC<GalleryPortraitImageProps> = ({
     return () => {
       active = false;
     };
-  }, [item]);
+  }, [isChunked, item]);
 
   if (failed) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 text-[#5C6660]">
-        <ImageOff className="w-6 h-6 mb-2" />
-        <span className="text-xs font-medium">
-          {item.supporterName || 'DMC Supporter'}
-        </span>
+      <div className="w-full h-full flex flex-col items-center justify-center text-center p-4 text-[#5C6660] bg-[#F4F5F3]">
+        <ImageOff className="w-6 h-6 mb-2 text-[#8A948D]" />
+        <span className="text-xs font-medium">Image unavailable</span>
       </div>
     );
   }
@@ -62,7 +77,6 @@ export const GalleryPortraitImage: React.FC<GalleryPortraitImageProps> = ({
       src={resolvedUrl}
       alt={alt}
       referrerPolicy="no-referrer"
-      loading="lazy"
       onError={() => setFailed(true)}
       className={className}
     />

@@ -339,6 +339,11 @@ app.delete('/api/admin/gallery-file', adminApiLimiter, requireAdmin, (req, res) 
   return res.json({ deleted: true });
 });
 
+// Ensure unknown API routes always return JSON instead of falling through to SPA HTML
+app.all('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'API endpoint not found.' });
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -357,6 +362,29 @@ async function startServer() {
       return res.sendFile(path.resolve(distDir, 'index.html'));
     });
   }
+
+  // Global JSON error handler so API requests never emit HTML error pages
+  app.use(
+    (
+      err: Error & { status?: number; type?: string },
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      if (res.headersSent) {
+        return next(err);
+      }
+      if (req.path.startsWith('/api/')) {
+        const status = typeof err.status === 'number' && err.status >= 400 ? err.status : 500;
+        const message =
+          err.type === 'entity.too.large'
+            ? 'Request payload is too large.'
+            : err.message || 'Internal server error.';
+        return res.status(status).json({ error: message });
+      }
+      return next(err);
+    },
+  );
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`DMC JUI Punjab server running on http://0.0.0.0:${PORT}`);

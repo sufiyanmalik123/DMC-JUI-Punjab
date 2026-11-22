@@ -127,8 +127,7 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 600000,
-          "pattern": "^[A-Za-z0-9+/=]+$",
-          "description": "Strict base64-encoded image slice."
+          "description": "Base64-encoded image slice."
         }
       },
       "required": ["index", "data"]
