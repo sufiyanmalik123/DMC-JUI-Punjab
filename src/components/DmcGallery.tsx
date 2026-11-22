@@ -17,6 +17,12 @@ interface DmcGalleryProps {
 
 const PAGE_SIZE = 12;
 
+function isDisplayableGalleryItem(item: GalleryItem): boolean {
+  if (item.chunkCount && item.chunkCount > 0) return true;
+  if (item.imageUrl.startsWith('/uploads/gallery/')) return false;
+  return Boolean(item.imageUrl);
+}
+
 function formatUploadDate(date: Date | null): string {
   if (!date) return 'Just now';
   return date.toLocaleDateString(undefined, {
@@ -117,16 +123,20 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
   }, [openMenuId]);
 
   // Merge first-page live items with paginated older items without duplicates
-  const allItems = useMemo(() => {
-    const seen = new Set(liveItems.map((i) => i.id));
-    const merged = [...liveItems];
-    for (const item of extraItems) {
+  const { allItems, hiddenLegacyCount } = useMemo(() => {
+    const seen = new Set<string>();
+    const rawMerged: GalleryItem[] = [];
+    for (const item of [...liveItems, ...extraItems]) {
       if (!seen.has(item.id)) {
         seen.add(item.id);
-        merged.push(item);
+        rawMerged.push(item);
       }
     }
-    return merged;
+    const visible = rawMerged.filter(isDisplayableGalleryItem);
+    return {
+      allItems: visible,
+      hiddenLegacyCount: rawMerged.length - visible.length,
+    };
   }, [extraItems, liveItems]);
 
   const handleLoadMore = async () => {
@@ -195,7 +205,7 @@ export const DmcGallery: React.FC<DmcGalleryProps> = ({ onCreateOwn }) => {
           <span>
             Total Uploaded Pictures:{' '}
             <strong className="font-mono-tabular text-[#064E3B]">
-              {Math.max(totalCount, allItems.length).toLocaleString()}
+              {Math.max(Math.max(0, totalCount - hiddenLegacyCount), allItems.length).toLocaleString()}
             </strong>
           </span>
         </div>
