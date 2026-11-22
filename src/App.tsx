@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminDashboard } from './components/AdminDashboard';
+import { BackgroundSlideshow } from './components/BackgroundSlideshow';
 import { DmcGallery } from './components/DmcGallery';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
@@ -68,7 +69,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-[#141D18]">
+    <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-[#141D18] relative">
+      {(route === 'editor' || route === 'gallery') && <BackgroundSlideshow />}
+
       <Header
         brandTitle={config.brandTitle}
         supportersCount={supportersCount}
@@ -76,7 +79,7 @@ export default function App() {
         onNavigate={navigate}
       />
 
-      <main className="flex-1">
+      <main className="relative z-10 flex-1">
         <ErrorBoundary>
           {route === 'editor' && (
             <ProfileEditor
@@ -97,7 +100,7 @@ export default function App() {
         </ErrorBoundary>
       </main>
 
-      <footer className="border-t border-[#E4E7E2] bg-white mt-12">
+      <footer className="relative z-10 border-t border-[#E4E7E2] bg-white/95 mt-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-[#5C6660] leading-relaxed">
           <p className="tracking-[0.06em] text-[11px] font-medium">
             Designed BY:
