@@ -6,8 +6,12 @@ import { Header } from './components/Header';
 import { ProfileEditor } from './components/ProfileEditor';
 import {
   fetchCampaignConfig,
+  fetchSupportersCount,
   getCachedCampaignConfig,
+  getCachedSupportersCount,
+  startThrottledSupportersPolling,
   subscribeLocalConfigUpdates,
+  subscribeLocalSupportersUpdates,
 } from './services/campaignService';
 import {
   AppRoute,
@@ -22,6 +26,9 @@ function parseHashRoute(): AppRoute {
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => parseHashRoute());
+  const [supportersCount, setSupportersCount] = useState<number>(
+    () => getCachedSupportersCount(),
+  );
   const [config, setConfig] = useState<CampaignConfig>(() => getCachedCampaignConfig());
 
   useEffect(() => {
@@ -35,6 +42,14 @@ export default function App() {
   useEffect(() => {
     let active = true;
 
+    void fetchSupportersCount()
+      .then((count) => {
+        if (active) setSupportersCount(count);
+      })
+      .catch(() => {
+        // Keep last cached count if live read fails or hits quota
+      });
+
     void fetchCampaignConfig()
       .then((nextConfig) => {
         if (active) setConfig(nextConfig);
@@ -43,12 +58,20 @@ export default function App() {
         // Keep cached/default config
       });
 
+    const unsubStats = subscribeLocalSupportersUpdates((count) => {
+      if (active) setSupportersCount(count);
+    });
+    const unsubPolling = startThrottledSupportersPolling((count) => {
+      if (active) setSupportersCount(count);
+    });
     const unsubConfig = subscribeLocalConfigUpdates((nextConfig) => {
       if (active) setConfig(nextConfig);
     });
 
     return () => {
       active = false;
+      unsubStats();
+      unsubPolling();
       unsubConfig();
     };
   }, []);
@@ -68,6 +91,7 @@ export default function App() {
 
       <Header
         brandTitle={config.brandTitle}
+        supportersCount={supportersCount}
         activeRoute={route}
         onNavigate={navigate}
       />
@@ -75,10 +99,16 @@ export default function App() {
       <main className="relative z-10 flex-1">
         <ErrorBoundary>
           {route === 'editor' && (
-            <ProfileEditor config={config} />
+            <ProfileEditor
+              config={config}
+              onSupportersUpdated={(nextCount) => setSupportersCount(nextCount)}
+            />
           )}
           {route === 'admin' && (
-            <AdminDashboard config={config} />
+            <AdminDashboard
+              config={config}
+              supportersCount={supportersCount}
+            />
           )}
         </ErrorBoundary>
       </main>

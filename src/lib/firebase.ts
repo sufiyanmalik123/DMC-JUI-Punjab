@@ -1,37 +1,22 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
+  disableNetwork,
   doc,
+  enableNetwork,
   getDocFromServer,
   getFirestore,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  type Firestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-function createFirestoreClient(): Firestore {
-  try {
-    return initializeFirestore(
-      app,
-      {
-        localCache: persistentLocalCache({
-          tabManager: persistentMultipleTabManager(),
-        }),
-      },
-      firebaseConfig.firestoreDatabaseId,
-    );
-  } catch {
-    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
-  }
-}
-
-export const db = createFirestoreClient();
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleAuthProvider = new GoogleAuthProvider();
+
+export const QUOTA_COOLDOWN_KEY = 'dmc_quota_cooldown_until_v1';
+const QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 
 export enum OperationType {
   CREATE = 'create',
@@ -75,8 +60,42 @@ export function isQuotaExceededError(error: unknown): boolean {
     combined.includes('resource-exhausted') ||
     combined.includes('quota limit exceeded') ||
     combined.includes('quota exceeded') ||
-    combined.includes('free daily read units')
+    combined.includes('free daily read units') ||
+    combined.includes('free daily write units') ||
+    combined.includes('daily write units') ||
+    combined.includes('daily read units')
   );
+}
+
+export function isInQuotaCooldown(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage.getItem(QUOTA_COOLDOWN_KEY);
+    if (!raw) return false;
+    const until = JSON.parse(raw) as unknown;
+    return typeof until === 'number' && Date.now() < until;
+  } catch {
+    return false;
+  }
+}
+
+export function markQuotaCooldown(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        QUOTA_COOLDOWN_KEY,
+        JSON.stringify(Date.now() + QUOTA_COOLDOWN_MS),
+      );
+    } catch {
+      // Ignore storage restrictions
+    }
+  }
+  // Halt Firestore's background retry/backoff stream immediately when quota is exhausted
+  void disableNetwork(db).catch(() => {});
+}
+
+export async function ensureFirestoreNetwork(): Promise<void> {
+  await enableNetwork(db);
 }
 
 export function handleFirestoreError(
@@ -106,8 +125,14 @@ export function handleFirestoreError(
 }
 
 const CONNECTION_CHECK_SESSION_KEY = 'dmc_fb_conn_checked_v1';
+const CONFIG_CACHE_KEY = 'dmc_campaign_config_cache_v1';
 
 async function testConnection() {
+  if (isInQuotaCooldown()) {
+    void disableNetwork(db).catch(() => {});
+    return;
+  }
+
   if (typeof window !== 'undefined') {
     try {
       if (window.sessionStorage.getItem(CONNECTION_CHECK_SESSION_KEY) === '1') {
@@ -120,8 +145,47 @@ async function testConnection() {
   }
 
   try {
-    await getDocFromServer(doc(db, 'campaign_config', 'active'));
+    const snap = await getDocFromServer(doc(db, 'campaign_config', 'active'));
+    if (typeof window !== 'undefined' && snap.exists()) {
+      const data = snap.data();
+      if (
+        typeof data?.frameUrl === 'string' &&
+        data.frameUrl.length > 0 &&
+        typeof data?.brandTitle === 'string' &&
+        data.brandTitle.length > 0
+      ) {
+        try {
+          window.localStorage.setItem(
+            CONFIG_CACHE_KEY,
+            JSON.stringify({
+              config: {
+                frameUrl: data.frameUrl,
+                brandTitle: data.brandTitle,
+                campaignTitle:
+                  typeof data.campaignTitle === 'string' ? data.campaignTitle : '',
+                campaignSubtitle:
+                  typeof data.campaignSubtitle === 'string' ? data.campaignSubtitle : '',
+                editorPrompt:
+                  typeof data.editorPrompt === 'string' ? data.editorPrompt : '',
+                updatedBy: typeof data.updatedBy === 'string' ? data.updatedBy : undefined,
+                updatedAtMs:
+                  data.updatedAt && typeof data.updatedAt.toMillis === 'function'
+                    ? data.updatedAt.toMillis()
+                    : null,
+              },
+              fetchedAt: Date.now(),
+            }),
+          );
+        } catch {
+          // Ignore storage restrictions
+        }
+      }
+    }
   } catch (error) {
+    if (isQuotaExceededError(error)) {
+      markQuotaCooldown();
+      return;
+    }
     if (error instanceof Error && error.message.includes('the client is offline')) {
       console.error('Please check your Firebase configuration.');
     }

@@ -7,10 +7,12 @@ import {
   Maximize2,
   X,
 } from 'lucide-react';
+import { incrementSupportersOnDownload } from '../services/campaignService';
 import { CampaignConfig } from '../types/campaign';
 
 interface ProfileEditorProps {
   config: CampaignConfig;
+  onSupportersUpdated?: (count: number) => void;
 }
 
 interface CutoutBounds {
@@ -75,6 +77,7 @@ function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
 
 export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   config,
+  onSupportersUpdated,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -367,6 +370,20 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       setTimeout(() => URL.revokeObjectURL(url), 15000);
 
       setDownloadSuccess('Your high-resolution PNG profile picture is ready.');
+
+      // Increment Supporters Counter asynchronously so remote Firestore latency never keeps "PREPARING PNG..." stuck
+      void incrementSupportersOnDownload()
+        .then((supporterResult) => {
+          onSupportersUpdated?.(supporterResult.count);
+          if (!supporterResult.quotaDeferred) {
+            setDownloadSuccess(
+              'Your high-resolution PNG profile picture is ready, and the SUPPORTERS counter has been updated.',
+            );
+          }
+        })
+        .catch(() => {
+          // Download already succeeded; avoid blocking or breaking download UI on counter write failure
+        });
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : 'Unable to complete download. Please try again.',
