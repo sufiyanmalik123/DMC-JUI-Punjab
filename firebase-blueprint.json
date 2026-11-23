@@ -7,7 +7,7 @@
       "properties": {
         "count": {
           "type": "integer",
-          "description": "Total number of campaign supporters starting from 700 and incrementing by 1 per image import or download."
+          "description": "Total number of campaign supporters starting from 1867 and incrementing by 1 per image download."
         },
         "updatedAt": {
           "type": "string",

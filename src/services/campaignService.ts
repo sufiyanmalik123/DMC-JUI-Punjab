@@ -25,7 +25,7 @@ import {
 
 const STATS_COLLECTION = 'stats';
 const SUPPORTERS_DOC_ID = 'supporters';
-export const SUPPORTERS_BASE_COUNT = 700;
+export const SUPPORTERS_BASE_COUNT = 1867;
 const CONFIG_COLLECTION = 'campaign_config';
 const ACTIVE_CONFIG_ID = 'active';
 
