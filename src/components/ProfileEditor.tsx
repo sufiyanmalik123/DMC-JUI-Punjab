@@ -5,19 +5,12 @@ import {
   Eye,
   ImagePlus,
   Maximize2,
-  UploadCloud,
   X,
 } from 'lucide-react';
-import {
-  incrementSupportersCounter,
-  uploadToGalleryWithProgress,
-} from '../services/campaignService';
 import { CampaignConfig } from '../types/campaign';
 
 interface ProfileEditorProps {
   config: CampaignConfig;
-  onOpenGallery: () => void;
-  onSupportersUpdated?: (count: number) => void;
 }
 
 interface CutoutBounds {
@@ -29,25 +22,6 @@ interface CutoutBounds {
 
 const PREVIEW_CANVAS_SIZE = 1000;
 const DOWNLOAD_EXPORT_SIZE = 2000;
-const GALLERY_EXPORT_SIZE = 1080;
-const GALLERY_THUMB_SIZE = 360;
-const SINGLE_CHUNK_BINARY_TARGET = 290_000;
-
-function extractReadableUploadError(err: unknown, fallback: string): string {
-  if (err instanceof Error) {
-    try {
-      const parsed = JSON.parse(err.message);
-      if (parsed && typeof parsed.error === 'string' && parsed.error.length > 0) {
-        return `Unable to upload to DMC Gallery: ${parsed.error}`;
-      }
-    } catch {
-      if (err.message) {
-        return err.message;
-      }
-    }
-  }
-  return fallback;
-}
 
 function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
   const sampleSize = 120;
@@ -101,13 +75,10 @@ function detectCutoutBounds(frameImg: HTMLImageElement): CutoutBounds {
 
 export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   config,
-  onOpenGallery,
-  onSupportersUpdated,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const downloadInFlightRef = useRef(false);
-  const uploadInFlightRef = useRef(false);
 
   const [frameImage, setFrameImage] = useState<HTMLImageElement | null>(null);
   const [frameError, setFrameError] = useState<string | null>(null);
@@ -125,9 +96,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   // Action states
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadSuccess, setDownloadSuccess] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   // Preview modal
@@ -181,7 +149,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
   const loadSelectedFile = useCallback(
     (file: File) => {
       setActionError(null);
-      setUploadSuccess(null);
       setDownloadSuccess(null);
 
       if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
@@ -399,11 +366,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       anchor.remove();
       setTimeout(() => URL.revokeObjectURL(url), 15000);
 
-      const nextCount = await incrementSupportersCounter();
-      onSupportersUpdated?.(nextCount);
-      setDownloadSuccess(
-        'Your high-resolution PNG profile picture is ready, and the SUPPORTERS counter has been updated.',
-      );
+      setDownloadSuccess('Your high-resolution PNG profile picture is ready.');
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : 'Unable to complete download. Please try again.',
@@ -411,90 +374,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
     } finally {
       downloadInFlightRef.current = false;
       setIsDownloading(false);
-    }
-  };
-
-  const handleUploadToDmc = async () => {
-    if (uploadInFlightRef.current) return;
-    if (!userImage) {
-      setActionError('Please import your photo before uploading to the DMC Gallery.');
-      return;
-    }
-    if (!frameImage) {
-      setActionError('Campaign frame is still loading. Please wait a moment.');
-      return;
-    }
-
-    uploadInFlightRef.current = true;
-    setActionError(null);
-    setUploadSuccess(null);
-    setIsUploading(true);
-    setUploadProgress(10);
-
-    try {
-      // Yield a paint frame so the uploading bar and button feedback appear immediately
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-
-      const exportCanvas = document.createElement('canvas');
-      renderToCanvas(exportCanvas, GALLERY_EXPORT_SIZE);
-      setUploadProgress(20);
-
-      const canvasToBlob = (
-        source: HTMLCanvasElement,
-        type: 'image/png' | 'image/jpeg',
-        quality?: number,
-      ) =>
-        new Promise<Blob>((resolve, reject) => {
-          source.toBlob(
-            (b) => {
-              if (b) resolve(b);
-              else reject(new Error('Could not export profile composition.'));
-            },
-            type,
-            quality,
-          );
-        });
-
-      const thumbCanvas = document.createElement('canvas');
-      thumbCanvas.width = GALLERY_THUMB_SIZE;
-      thumbCanvas.height = GALLERY_THUMB_SIZE;
-      const thumbCtx = thumbCanvas.getContext('2d');
-      if (thumbCtx) {
-        thumbCtx.drawImage(exportCanvas, 0, 0, GALLERY_THUMB_SIZE, GALLERY_THUMB_SIZE);
-      }
-
-      const [initialBlob, thumbnailBlob] = await Promise.all([
-        canvasToBlob(exportCanvas, 'image/jpeg', 0.9),
-        thumbCtx
-          ? canvasToBlob(thumbCanvas, 'image/jpeg', 0.76).catch(() => undefined)
-          : Promise.resolve(undefined),
-      ]);
-
-      // Keep payload inside a single Firestore chunk (~290KB binary) for rapid upload
-      let blob = initialBlob;
-      if (blob.size > SINGLE_CHUNK_BINARY_TARGET) {
-        blob = await canvasToBlob(exportCanvas, 'image/jpeg', 0.84);
-      }
-
-      await uploadToGalleryWithProgress(
-        blob,
-        {
-          supporterName: '',
-          city: '',
-          mimeType: 'image/jpeg',
-          thumbnailBlob,
-        },
-        (pct) => setUploadProgress(pct),
-      );
-
-      setUploadSuccess('Your campaign profile picture is now live in the public DMC Gallery.');
-    } catch (err) {
-      setActionError(
-        extractReadableUploadError(err, 'Failed to upload image to DMC Gallery.'),
-      );
-    } finally {
-      uploadInFlightRef.current = false;
-      setIsUploading(false);
     }
   };
 
@@ -623,8 +502,8 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           </div>
         </div>
 
-        {/* Two Prominent Side-by-Side Action Buttons Below Editor */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        {/* Primary Action Button Below Editor */}
+        <div>
           <button
             type="button"
             onClick={handleDownloadImage}
@@ -634,33 +513,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
             <Download className="w-4 h-4 shrink-0" />
             {isDownloading ? 'PREPARING PNG...' : 'DOWNLOAD IMAGE'}
           </button>
-
-          <button
-            type="button"
-            onClick={handleUploadToDmc}
-            disabled={isUploading || !userImage}
-            className="w-full min-h-[52px] inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white border-2 border-[#064E3B] text-[#064E3B] font-display text-sm font-bold tracking-wide hover:bg-[#F2F7F4] disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#064E3B]"
-          >
-            <UploadCloud className="w-4 h-4 shrink-0" />
-            {isUploading ? `UPLOADING ${uploadProgress}%` : 'UPLOAD TO DMC'}
-          </button>
         </div>
-
-        {/* Upload Progress Bar */}
-        {isUploading && (
-          <div className="bg-white border border-[#E4E7E2] rounded-xl p-4" role="status">
-            <div className="flex items-center justify-between text-xs font-semibold text-[#141D18] mb-2">
-              <span>Uploading composed portrait to DMC Gallery</span>
-              <span className="font-mono-tabular">{uploadProgress}%</span>
-            </div>
-            <div className="w-full h-2 bg-[#E4E7E2] rounded-full overflow-hidden">
-              <div
-                className="h-full bg-[#064E3B] transition-all duration-150"
-                style={{ width: `${uploadProgress}%` }}
-              />
-            </div>
-          </div>
-        )}
 
         {/* Feedback Banners */}
         {actionError && (
@@ -679,25 +532,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
           >
             <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
             <span>{downloadSuccess}</span>
-          </div>
-        )}
-
-        {uploadSuccess && (
-          <div
-            role="status"
-            className="bg-[#ECFDF5] border border-[#A7F3D0] text-[#064E3B] rounded-xl px-4 py-3 text-sm font-medium flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-          >
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>{uploadSuccess}</span>
-            </div>
-            <button
-              type="button"
-              onClick={onOpenGallery}
-              className="inline-flex items-center justify-center px-3.5 py-1.5 rounded-lg bg-[#064E3B] text-white text-xs font-semibold hover:bg-[#053D2E] whitespace-nowrap shrink-0"
-            >
-              View DMC Gallery
-            </button>
           </div>
         )}
       </div>
@@ -735,28 +569,16 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
               />
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewDataUrl(null);
-                  void handleDownloadImage();
-                }}
-                className="py-2.5 px-4 rounded-xl bg-[#064E3B] text-white text-sm font-semibold hover:bg-[#053D2E] whitespace-nowrap"
-              >
-                DOWNLOAD IMAGE
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setPreviewDataUrl(null);
-                  void handleUploadToDmc();
-                }}
-                className="py-2.5 px-4 rounded-xl border border-[#064E3B] text-[#064E3B] text-sm font-semibold hover:bg-[#F2F7F4] whitespace-nowrap"
-              >
-                UPLOAD TO DMC
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setPreviewDataUrl(null);
+                void handleDownloadImage();
+              }}
+              className="mt-4 w-full py-2.5 px-4 rounded-xl bg-[#064E3B] text-white text-sm font-semibold hover:bg-[#053D2E] whitespace-nowrap"
+            >
+              DOWNLOAD IMAGE
+            </button>
           </div>
         </div>
       )}

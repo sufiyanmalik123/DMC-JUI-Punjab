@@ -48,6 +48,16 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
+    // Validation blueprint: SupporterRegistration
+    function isValidSupporter(data) {
+      return data.keys().hasAll(['action', 'createdAt'])
+        && data.keys().hasOnly(['action', 'createdAt'])
+        && data.action is string
+        && data.action.size() <= 16
+        && data.action in ['download', 'upload']
+        && data.createdAt is timestamp;
+    }
+
     // Validation blueprint: CampaignConfig
     function isValidCampaignConfig(data) {
       return data.keys().hasAll([
@@ -154,14 +164,14 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    // Permanent SUPPORTERS counter
+    // Permanent SUPPORTERS counter (starts at 700 baseline)
     match /stats/{statId} {
       allow get: if isValidId(statId) && statId == 'supporters';
       allow list: if false;
       allow create: if isValidId(statId)
         && statId == 'supporters'
         && isValidStats(incoming())
-        && (incoming().count == 0 || incoming().count == 1 || isAdmin());
+        && (incoming().count == 700 || incoming().count == 701 || isAdmin());
       allow update: if isValidId(statId)
         && statId == 'supporters'
         && isValidStats(incoming())
@@ -170,9 +180,24 @@ service cloud.firestore {
           || (
             incoming().diff(existing()).affectedKeys().hasOnly(['count', 'updatedAt'])
             && existing().count is int
-            && incoming().count == existing().count + 1
+            && (
+              (existing().count >= 700 && incoming().count == existing().count + 1)
+              || (existing().count < 700 && (incoming().count == 700 || incoming().count == 701))
+            )
           )
         );
+      allow delete: if false;
+    }
+
+    // Deduplicated supporter registrations bound atomically to stats/supporters
+    match /supporters/{supporterId} {
+      allow get: if isValidId(supporterId);
+      allow list: if isAdmin();
+      allow create: if isValidId(supporterId)
+        && isValidSupporter(incoming())
+        && incoming().createdAt == request.time
+        && getAfter(/databases/$(database)/documents/stats/supporters).data.updatedAt == request.time;
+      allow update: if false;
       allow delete: if false;
     }
 

@@ -1,32 +1,28 @@
 import { useEffect, useState } from 'react';
 import { AdminDashboard } from './components/AdminDashboard';
 import { BackgroundSlideshow } from './components/BackgroundSlideshow';
-import { DmcGallery } from './components/DmcGallery';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Header } from './components/Header';
 import { ProfileEditor } from './components/ProfileEditor';
 import {
-  initializeSupportersCounter,
-  subscribeCampaignConfig,
-  subscribeSupportersCount,
+  fetchCampaignConfig,
+  getCachedCampaignConfig,
+  subscribeLocalConfigUpdates,
 } from './services/campaignService';
 import {
   AppRoute,
   CampaignConfig,
-  DEFAULT_CAMPAIGN_CONFIG,
 } from './types/campaign';
 
 function parseHashRoute(): AppRoute {
   const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase();
-  if (hash === 'gallery' || hash === 'dmc-gallery') return 'gallery';
   if (hash === 'admin') return 'admin';
   return 'editor';
 }
 
 export default function App() {
   const [route, setRoute] = useState<AppRoute>(() => parseHashRoute());
-  const [supportersCount, setSupportersCount] = useState<number>(0);
-  const [config, setConfig] = useState<CampaignConfig>(DEFAULT_CAMPAIGN_CONFIG);
+  const [config, setConfig] = useState<CampaignConfig>(() => getCachedCampaignConfig());
 
   useEffect(() => {
     const onHashChange = () => {
@@ -38,23 +34,21 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void initializeSupportersCounter()
-      .then((initialCount) => {
-        if (active) setSupportersCount(initialCount);
+
+    void fetchCampaignConfig()
+      .then((nextConfig) => {
+        if (active) setConfig(nextConfig);
       })
       .catch(() => {
-        // Real-time listener below continues syncing
+        // Keep cached/default config
       });
 
-    const unsubStats = subscribeSupportersCount((count) => {
-      setSupportersCount(count);
+    const unsubConfig = subscribeLocalConfigUpdates((nextConfig) => {
+      if (active) setConfig(nextConfig);
     });
-    const unsubConfig = subscribeCampaignConfig((nextConfig) => {
-      setConfig(nextConfig);
-    });
+
     return () => {
       active = false;
-      unsubStats();
       unsubConfig();
     };
   }, []);
@@ -70,11 +64,10 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF9F6] text-[#141D18] relative">
-      {(route === 'editor' || route === 'gallery') && <BackgroundSlideshow />}
+      {(route === 'editor') && <BackgroundSlideshow />}
 
       <Header
         brandTitle={config.brandTitle}
-        supportersCount={supportersCount}
         activeRoute={route}
         onNavigate={navigate}
       />
@@ -82,20 +75,10 @@ export default function App() {
       <main className="relative z-10 flex-1">
         <ErrorBoundary>
           {route === 'editor' && (
-            <ProfileEditor
-              config={config}
-              onOpenGallery={() => navigate('gallery')}
-              onSupportersUpdated={(nextCount) => setSupportersCount(nextCount)}
-            />
-          )}
-          {route === 'gallery' && (
-            <DmcGallery onCreateOwn={() => navigate('editor')} />
+            <ProfileEditor config={config} />
           )}
           {route === 'admin' && (
-            <AdminDashboard
-              config={config}
-              supportersCount={supportersCount}
-            />
+            <AdminDashboard config={config} />
           )}
         </ErrorBoundary>
       </main>

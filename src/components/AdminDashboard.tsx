@@ -6,36 +6,26 @@ import {
   LogOut,
   Save,
   ShieldAlert,
-  Trash2,
   Upload,
 } from 'lucide-react';
-import type { DocumentData, QueryDocumentSnapshot } from 'firebase/firestore';
 import { auth, googleAuthProvider } from '../lib/firebase';
 import {
-  deleteGalleryItemAsAdmin,
-  fetchGalleryTotalCount,
-  fetchNextGalleryPage,
   listCampaignFramesAsAdmin,
   saveCampaignConfig,
-  subscribeLatestGalleryItems,
   uploadCampaignFrameAsAdmin,
 } from '../services/campaignService';
 import {
   AUTHORIZED_ADMIN_EMAIL,
   CampaignConfig,
   FrameAsset,
-  GalleryItem,
 } from '../types/campaign';
-import { GalleryPortraitImage } from './GalleryPortraitImage';
 
 interface AdminDashboardProps {
   config: CampaignConfig;
-  supportersCount: number;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   config,
-  supportersCount,
 }) => {
   const [authUser, setAuthUser] = useState<User | null>(auth.currentUser);
   const [authReady, setAuthReady] = useState(false);
@@ -55,15 +45,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [savingConfig, setSavingConfig] = useState(false);
   const [configSavedNotice, setConfigSavedNotice] = useState<string | null>(null);
   const [adminError, setAdminError] = useState<string | null>(null);
-
-  // Gallery Moderation State
-  const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([]);
-  const [extraItems, setExtraItems] = useState<GalleryItem[]>([]);
-  const [totalGalleryCount, setTotalGalleryCount] = useState<number>(0);
-  const [lastCursor, setLastCursor] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -101,30 +82,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   useEffect(() => {
     if (!isAuthorizedAdmin) return;
     void loadFramesList();
-
-    const refreshCount = async () => {
-      try {
-        const count = await fetchGalleryTotalCount();
-        setTotalGalleryCount(count);
-      } catch {
-        // Ignore non-fatal count failure
-      }
-    };
-
-    const unsub = subscribeLatestGalleryItems(
-      20,
-      (items, cursor) => {
-        setGalleryItems(items);
-        setLastCursor(cursor);
-        setHasMore(items.length === 20);
-        void refreshCount();
-      },
-      (err) => {
-        setAdminError(err.message);
-      },
-    );
-
-    return () => unsub();
   }, [isAuthorizedAdmin, loadFramesList]);
 
   const handleGoogleSignIn = async () => {
@@ -204,35 +161,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const handleDeleteGalleryItem = async (item: GalleryItem) => {
-    if (!authUser || !isAuthorizedAdmin) return;
-    setAdminError(null);
-    setDeletingId(item.id);
-    try {
-      const token = await authUser.getIdToken();
-      await deleteGalleryItemAsAdmin(item, token);
-      setExtraItems((prev) => prev.filter((x) => x.id !== item.id));
-      setTotalGalleryCount((prev) => Math.max(0, prev - 1));
-      setConfirmDeleteId(null);
-    } catch (err) {
-      setAdminError(err instanceof Error ? err.message : 'Unable to delete gallery image.');
-    } finally {
-      setDeletingId(null);
-    }
-  };
-
-  const handleLoadMoreGallery = async () => {
-    if (!lastCursor) return;
-    try {
-      const next = await fetchNextGalleryPage(20, lastCursor);
-      setExtraItems((prev) => [...prev, ...next.items]);
-      setLastCursor(next.lastDoc);
-      setHasMore(next.hasMore);
-    } catch (err) {
-      setAdminError(err instanceof Error ? err.message : 'Unable to load more gallery uploads.');
-    }
-  };
-
   if (!authReady) {
     return (
       <section className="max-w-5xl mx-auto px-4 sm:px-6 py-16 text-center text-sm text-[#5C6660]">
@@ -304,11 +232,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }
 
-  const combinedGallery = [
-    ...galleryItems,
-    ...extraItems.filter((e) => !galleryItems.some((g) => g.id === e.id)),
-  ];
-
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-12 flex flex-col gap-8">
       {/* Top Bar Summary */}
@@ -335,25 +258,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       </div>
 
       {/* KPI Metrics Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white border border-[#E4E7E2] rounded-2xl p-5">
-          <p className="text-xs font-semibold tracking-wider text-[#5C6660] uppercase">
-            Total Supporters (Downloads)
-          </p>
-          <p className="mt-2 font-mono-tabular text-3xl font-bold text-[#064E3B]">
-            {supportersCount.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="bg-white border border-[#E4E7E2] rounded-2xl p-5">
-          <p className="text-xs font-semibold tracking-wider text-[#5C6660] uppercase">
-            Total DMC Gallery Uploads
-          </p>
-          <p className="mt-2 font-mono-tabular text-3xl font-bold text-[#141D18]">
-            {Math.max(totalGalleryCount, combinedGallery.length).toLocaleString()}
-          </p>
-        </div>
-
+      <div className="grid grid-cols-1 gap-4">
         <div className="bg-white border border-[#E4E7E2] rounded-2xl p-5">
           <p className="text-xs font-semibold tracking-wider text-[#5C6660] uppercase">
             Available Campaign Frames
@@ -566,102 +471,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </form>
       </div>
 
-      {/* Gallery Moderation Section */}
-      <div className="bg-white border border-[#E4E7E2] rounded-2xl p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-4 mb-5 border-b border-[#E4E7E2]">
-          <div>
-            <h2 className="font-display text-lg font-bold text-[#141D18]">
-              DMC Gallery Moderation
-            </h2>
-            <p className="text-xs text-[#5C6660]">
-              Review uploaded supporter portraits and remove inappropriate or unwanted images.
-            </p>
-          </div>
-          <span className="text-xs font-mono-tabular text-[#5C6660]">
-            Showing {combinedGallery.length} of {Math.max(totalGalleryCount, combinedGallery.length)}
-          </span>
-        </div>
-
-        {combinedGallery.length === 0 ? (
-          <p className="text-sm text-[#5C6660] py-8 text-center">
-            No gallery images have been uploaded yet.
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {combinedGallery.map((item) => {
-                const isConfirming = confirmDeleteId === item.id;
-                const isDeleting = deletingId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    className="border border-[#E4E7E2] rounded-xl p-3 flex flex-col justify-between bg-[#FAF9F6]"
-                  >
-                    <div>
-                      <div className="aspect-square rounded-lg overflow-hidden bg-white border border-[#E4E7E2]">
-                        <GalleryPortraitImage
-                          item={item}
-                          alt={item.supporterName || 'Gallery upload'}
-                        />
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-[#141D18] truncate">
-                        {item.supporterName || 'DMC Supporter'}
-                      </p>
-                      <p className="text-[11px] text-[#5C6660] truncate">
-                        {item.city || 'No city'} · {Math.round(item.fileSize / 1024)} KB
-                      </p>
-                    </div>
-
-                    <div className="mt-3">
-                      {!isConfirming ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(item.id)}
-                          className="w-full py-2 px-3 rounded-lg border border-red-200 bg-white text-red-700 hover:bg-red-50 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Delete Image
-                        </button>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={isDeleting}
-                            onClick={() => void handleDeleteGalleryItem(item)}
-                            className="flex-1 py-2 px-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50"
-                          >
-                            {isDeleting ? 'Deleting...' : 'Confirm'}
-                          </button>
-                          <button
-                            type="button"
-                            disabled={isDeleting}
-                            onClick={() => setConfirmDeleteId(null)}
-                            className="py-2 px-2.5 rounded-lg border border-[#E4E7E2] bg-white text-[#141D18] text-xs font-semibold"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {hasMore && (
-              <div className="mt-6 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => void handleLoadMoreGallery()}
-                  className="px-5 py-2 rounded-xl border border-[#E4E7E2] text-xs font-semibold text-[#141D18] hover:border-[#064E3B]"
-                >
-                  Load More Uploads
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </div>
     </section>
   );
 };

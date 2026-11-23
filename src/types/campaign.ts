@@ -1,4 +1,4 @@
-export type AppRoute = 'editor' | 'gallery' | 'admin';
+export type AppRoute = 'editor' | 'admin';
 
 export interface CampaignConfig {
   frameUrl: string;

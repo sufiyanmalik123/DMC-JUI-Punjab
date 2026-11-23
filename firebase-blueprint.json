@@ -2,12 +2,12 @@
   "entities": {
     "CampaignStats": {
       "title": "CampaignStats",
-      "description": "Tracks the permanent SUPPORTERS counter incremented by 1 per successful profile download.",
+      "description": "Tracks the permanent SUPPORTERS counter incremented by 1 when a user imports an image or downloads a profile.",
       "type": "object",
       "properties": {
         "count": {
           "type": "integer",
-          "description": "Total number of successful campaign profile picture downloads, starting at 0."
+          "description": "Total number of campaign supporters starting from 700 and incrementing by 1 per image import or download."
         },
         "updatedAt": {
           "type": "string",
@@ -164,12 +164,35 @@
         }
       },
       "required": ["email", "role", "createdAt", "updatedAt"]
+    },
+    "SupporterRegistration": {
+      "title": "SupporterRegistration",
+      "description": "Deduplicated supporter registration record ensuring each participant increments the supporter counter at most once.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["download", "upload"],
+          "maxLength": 16,
+          "description": "Action that registered the supporter."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of registration."
+        }
+      },
+      "required": ["action", "createdAt"]
     }
   },
   "firestore": {
     "/stats/{statId}": {
       "schema": { "$ref": "#/entities/CampaignStats" },
       "description": "Publicly readable and atomically incrementable SUPPORTERS counter document (stats/supporters)."
+    },
+    "/supporters/{supporterId}": {
+      "schema": { "$ref": "#/entities/SupporterRegistration" },
+      "description": "Immutable, deduplicated supporter registration tokens bound atomically to stats/supporters increments."
     },
     "/campaign_config/{configId}": {
       "schema": { "$ref": "#/entities/CampaignConfig" },
