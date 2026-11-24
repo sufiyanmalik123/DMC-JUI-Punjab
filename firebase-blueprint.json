@@ -2,12 +2,12 @@
   "entities": {
     "CampaignStats": {
       "title": "CampaignStats",
-      "description": "Tracks the permanent SUPPORTERS counter incremented by 1 when a user imports an image or downloads a profile.",
+      "description": "Tracks the permanent SUPPORTERS counter incremented by 1 when a user imports an image.",
       "type": "object",
       "properties": {
         "count": {
           "type": "integer",
-          "description": "Total number of campaign supporters starting from 2547 and incrementing by 1 per image download."
+          "description": "Total number of campaign supporters starting from 3678 and incrementing by 1 when a user imports an image."
         },
         "updatedAt": {
           "type": "string",

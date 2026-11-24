@@ -263,7 +263,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white border border-[#E4E7E2] rounded-2xl p-5">
           <p className="text-xs font-semibold tracking-wider text-[#5C6660] uppercase">
-            Total Supporters (Downloads)
+            Total Supporters
           </p>
           <p className="mt-2 font-mono-tabular text-3xl font-bold text-[#064E3B]">
             {supportersCount.toLocaleString()}

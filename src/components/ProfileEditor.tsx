@@ -7,7 +7,7 @@ import {
   Maximize2,
   X,
 } from 'lucide-react';
-import { incrementSupportersOnDownload } from '../services/campaignService';
+import { incrementSupportersOnImport } from '../services/campaignService';
 import { CampaignConfig } from '../types/campaign';
 
 interface ProfileEditorProps {
@@ -169,6 +169,13 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
         URL.revokeObjectURL(objectUrl);
         setUserImage(img);
         fitPhotoToFrame(img, cutout);
+        void incrementSupportersOnImport()
+          .then((supporterResult) => {
+            onSupportersUpdated?.(supporterResult.count);
+          })
+          .catch(() => {
+            // Avoid blocking or breaking photo import if live Firestore write fails or hits quota
+          });
       };
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
@@ -176,7 +183,7 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       };
       img.src = objectUrl;
     },
-    [cutout, fitPhotoToFrame],
+    [cutout, fitPhotoToFrame, onSupportersUpdated],
   );
 
   // Render composition onto any target canvas
@@ -370,20 +377,6 @@ export const ProfileEditor: React.FC<ProfileEditorProps> = ({
       setTimeout(() => URL.revokeObjectURL(url), 15000);
 
       setDownloadSuccess('Your high-resolution PNG profile picture is ready.');
-
-      // Increment Supporters Counter asynchronously so remote Firestore latency never keeps "PREPARING PNG..." stuck
-      void incrementSupportersOnDownload()
-        .then((supporterResult) => {
-          onSupportersUpdated?.(supporterResult.count);
-          if (!supporterResult.quotaDeferred) {
-            setDownloadSuccess(
-              'Your high-resolution PNG profile picture is ready, and the SUPPORTERS counter has been updated.',
-            );
-          }
-        })
-        .catch(() => {
-          // Download already succeeded; avoid blocking or breaking download UI on counter write failure
-        });
     } catch (err) {
       setActionError(
         err instanceof Error ? err.message : 'Unable to complete download. Please try again.',

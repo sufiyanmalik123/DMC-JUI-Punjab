@@ -25,7 +25,7 @@ import {
 
 const STATS_COLLECTION = 'stats';
 const SUPPORTERS_DOC_ID = 'supporters';
-export const SUPPORTERS_BASE_COUNT = 2547;
+export const SUPPORTERS_BASE_COUNT = 3678;
 const CONFIG_COLLECTION = 'campaign_config';
 const ACTIVE_CONFIG_ID = 'active';
 
@@ -261,7 +261,7 @@ function getFirestoreErrorCode(error: unknown): string {
  * Increments stats/supporters by 1 using a zero-read increment-only write operation
  * (FieldValue.increment(1)) with a timeout guard and quota-cooldown protection.
  */
-export async function incrementSupportersOnDownload(): Promise<{
+export async function incrementSupportersOnImport(): Promise<{
   count: number;
   quotaDeferred?: boolean;
 }> {
