@@ -7,7 +7,7 @@
       "properties": {
         "count": {
           "type": "integer",
-          "description": "Total number of campaign supporters starting from 3678 and incrementing by 1 when a user imports an image."
+          "description": "Total number of campaign supporters starting from 8739 and incrementing by 1 when a user imports an image."
         },
         "updatedAt": {
           "type": "string",
@@ -188,7 +188,7 @@
   "firestore": {
     "/stats/{statId}": {
       "schema": { "$ref": "#/entities/CampaignStats" },
-      "description": "Publicly readable and atomically incrementable SUPPORTERS counter document (stats/supporters)."
+      "description": "Publicly readable and atomically incrementable SUPPORTERS counter document (stats/supporters_v2)."
     },
     "/supporters/{supporterId}": {
       "schema": { "$ref": "#/entities/SupporterRegistration" },

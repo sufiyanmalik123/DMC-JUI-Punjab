@@ -24,15 +24,15 @@ import {
 } from '../types/campaign';
 
 const STATS_COLLECTION = 'stats';
-const SUPPORTERS_DOC_ID = 'supporters';
-export const SUPPORTERS_BASE_COUNT = 3678;
+const SUPPORTERS_DOC_ID = 'supporters_v2';
+export const SUPPORTERS_BASE_COUNT = 8739;
 const CONFIG_COLLECTION = 'campaign_config';
 const ACTIVE_CONFIG_ID = 'active';
 
 const STATS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const CONFIG_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
-const SUPPORTERS_CACHE_KEY = 'dmc_supporters_cache_v1';
+const SUPPORTERS_CACHE_KEY = 'dmc_supporters_cache_v2';
 const CONFIG_CACHE_KEY = 'dmc_campaign_config_cache_v1';
 const SYNC_CHANNEL_NAME = 'dmc_jui_sync_v1';
 

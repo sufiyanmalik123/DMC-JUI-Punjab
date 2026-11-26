@@ -164,16 +164,16 @@ service cloud.firestore {
         && data.updatedAt == request.time;
     }
 
-    // Permanent SUPPORTERS counter (starts at 3678 baseline)
+    // Permanent SUPPORTERS counter (starts at 8739 baseline)
     match /stats/{statId} {
-      allow get: if isValidId(statId) && statId == 'supporters';
+      allow get: if isValidId(statId) && (statId == 'supporters' || statId == 'supporters_v2');
       allow list: if false;
       allow create: if isValidId(statId)
-        && statId == 'supporters'
+        && statId == 'supporters_v2'
         && isValidStats(incoming())
-        && (incoming().count == 3678 || incoming().count == 3679 || isAdmin());
+        && (incoming().count == 8739 || incoming().count == 8740 || isAdmin());
       allow update: if isValidId(statId)
-        && statId == 'supporters'
+        && statId == 'supporters_v2'
         && isValidStats(incoming())
         && (
           isAdmin()
@@ -181,8 +181,8 @@ service cloud.firestore {
             incoming().diff(existing()).affectedKeys().hasOnly(['count', 'updatedAt'])
             && existing().count is int
             && (
-              (existing().count >= 3678 && incoming().count == existing().count + 1)
-              || (existing().count < 3678 && (incoming().count == 3678 || incoming().count == 3679))
+              (existing().count >= 8739 && incoming().count == existing().count + 1)
+              || (existing().count < 8739 && (incoming().count == 8739 || incoming().count == 8740))
             )
           )
         );
